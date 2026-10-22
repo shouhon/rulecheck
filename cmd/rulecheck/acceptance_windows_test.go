@@ -29,21 +29,7 @@ const secret = "acceptance-secret-do-not-print"
 
 // TestExecutableAcceptance は模擬データだけを使い、プロセス境界で受入条件を確認する。
 func TestExecutableAcceptance(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "rulecheck.exe")
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-trimpath", "-o", binary, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("受入確認用のビルドに失敗しました: %v\n%s", err, output)
-	}
-	body, err := os.ReadFile(binary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("検証対象: CLI %s、実行ファイルSHA-256 %x", version.Current, sha256.Sum256(body))
-	if code, stdout, stderr := runProcess(t, binary, t.TempDir(), nil, "--version"); code != 0 || stdout != "rulecheck "+version.Current+"\n" || stderr != "" {
-		t.Fatal("実行ファイルの版番号が正本と一致しません")
-	}
+	binary := buildAcceptanceBinary(t)
 
 	t.Run("正常な共有リンクと実体基準の参照", func(t *testing.T) {
 		f := newFixture(t, binary)
@@ -217,29 +203,7 @@ func TestExecutableAcceptance(t *testing.T) {
 				}
 			}
 		})
-		for _, tc := range []struct {
-			name, link, target, finding string
-			args                        []string
-			directory                   bool
-		}{
-			{"指定ファイルのリンク", "別名.md", remote + `\AGENTS.md`, "path_not_local", []string{"--rules=別名.md"}, false},
-			{"スキルの親のリンク", "skills", remote, "path_not_local", []string{"--skills=skills"}, true},
-			{"直下のスキルのリンク", "skills/remote", remote, "path_not_local", []string{"--skills=skills"}, true},
-			{"スキルファイルのリンク", "skills/remote/SKILL.md", remote + `\SKILL.md`, "path_not_local", []string{"--skills=skills"}, false},
-			{"本文から参照するリンク", "別名.md", remote + `\資料.md`, "reference_not_local", []string{"--rules=AGENTS.md"}, false},
-			{"PATHのリンク", "tools", remote, "command_unresolved", []string{"--command=mock"}, true},
-			{"CLI候補のリンク", "tools/remote.cmd", remote + `\mock.cmd`, "command_unresolved", []string{"--command=remote"}, false},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				f := fixture{t.TempDir(), binary}
-				writeFile(t, f.path("AGENTS.md"), "[資料](別名.md)\n")
-				writeFile(t, f.path("profile", "設定.txt"), secret)
-				makeRemoteSymlink(t, tc.target, f.path(tc.link), tc.directory)
-				watchFixture(t, f.root)
-				r, _ := f.check(t, tc.args, "incomplete", 2, report.Counts{Unknown: 1})
-				requireFinding(t, r, tc.finding)
-			})
-		}
+		checkNetworkLinks(t, binary, remote)
 	})
 
 	t.Run("メタデータと直下だけの列挙", func(t *testing.T) {
@@ -321,6 +285,53 @@ func TestExecutableAcceptance(t *testing.T) {
 	})
 }
 
+func buildAcceptanceBinary(t *testing.T) string {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "rulecheck.exe")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	build := exec.CommandContext(ctx, "go", "build", "-trimpath", "-o", binary, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("受入確認用のビルドに失敗しました: %v\n%s", err, output)
+	}
+	body, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("検証対象: CLI %s、実行ファイルSHA-256 %x", version.Current, sha256.Sum256(body))
+	if code, stdout, stderr := runProcess(t, binary, t.TempDir(), nil, "--version"); code != 0 || stdout != "rulecheck "+version.Current+"\n" || stderr != "" {
+		t.Fatal("実行ファイルの版番号が正本と一致しません")
+	}
+	return binary
+}
+
+func checkNetworkLinks(t *testing.T, binary, remote string) {
+	t.Helper()
+	for _, tc := range []struct {
+		name, link, target, finding string
+		args                        []string
+		directory                   bool
+	}{
+		{"指定ファイルのリンク", "別名.md", remote + `\AGENTS.md`, "path_not_local", []string{"--rules=別名.md"}, false},
+		{"スキルの親のリンク", "skills", remote, "path_not_local", []string{"--skills=skills"}, true},
+		{"直下のスキルのリンク", "skills/remote", remote, "path_not_local", []string{"--skills=skills"}, true},
+		{"スキルファイルのリンク", "skills/remote/SKILL.md", remote + `\SKILL.md`, "path_not_local", []string{"--skills=skills"}, false},
+		{"本文から参照するリンク", "別名.md", remote + `\資料.md`, "reference_not_local", []string{"--rules=AGENTS.md"}, false},
+		{"PATHのリンク", "tools", remote, "command_unresolved", []string{"--command=mock"}, true},
+		{"CLI候補のリンク", "tools/remote.cmd", remote + `\mock.cmd`, "command_unresolved", []string{"--command=remote"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := fixture{t.TempDir(), binary}
+			writeFile(t, f.path("AGENTS.md"), "[資料](別名.md)\n")
+			writeFile(t, f.path("profile", "設定.txt"), secret)
+			makeRemoteSymlink(t, tc.target, f.path(tc.link), tc.directory)
+			watchFixture(t, f.root)
+			r, _ := f.check(t, tc.args, "incomplete", 2, report.Counts{Unknown: 1})
+			requireFinding(t, r, tc.finding)
+		})
+	}
+}
+
 type fixture struct{ root, binary string }
 
 func newFixture(t *testing.T, binary string) fixture {
@@ -373,7 +384,15 @@ func runProcess(t *testing.T, binary, dir string, overrides map[string]string, a
 	}
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, &stderr
-	err := command.Run()
+	started := time.Now().UTC()
+	err := command.Start()
+	if err == nil {
+		err = command.Wait()
+	}
+	if os.Getenv("RULECHECK_TEST_TRACE_PROCESSES") == "1" && command.ProcessState != nil {
+		t.Logf("観測区間: 実行ファイル=%s PID=%d 開始=%s 終了=%s 終了コード=%d", filepath.Base(binary), command.Process.Pid,
+			started.Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano), command.ProcessState.ExitCode())
+	}
 	var exitError *exec.ExitError
 	if ctx.Err() != nil || err != nil && !errors.As(err, &exitError) {
 		t.Fatalf("実行ファイルを起動または完了できません: %v", err)
