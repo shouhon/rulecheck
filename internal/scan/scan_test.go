@@ -42,8 +42,8 @@ func TestRulesIdentityAndRelativePaths(t *testing.T) {
 	t.Chdir(dir)
 	options := scan.Options{Rules: []string{real, "実体 空白.md", other, real}}
 	result := scan.Run(options)
-	if len(result.Results) != 2 || result.Counts != (report.Counts{Unknown: 2}) || result.ExitCode() != 2 {
-		t.Fatalf("同一実体の集約または未実装の分類が一致しません: %+v", result)
+	if len(result.Results) != 2 || result.Counts != (report.Counts{}) || result.ExitCode() != 0 {
+		t.Fatalf("同一実体の集約または分類が一致しません: %+v", result)
 	}
 	for _, target := range result.Results {
 		if target.ResolvedPath == real && len(target.Aliases) != 2 {
@@ -67,11 +67,11 @@ func TestRuleLinks(t *testing.T) {
 	chain := filepath.Join(dir, "連鎖.md")
 	symlink(t, filepath.Base(alias), chain)
 	result := scan.Run(scan.Options{Rules: []string{chain, real, alias}})
-	if len(result.Results) != 1 || result.Counts.Unknown != 1 {
+	if len(result.Results) != 1 || result.Counts != (report.Counts{}) {
 		t.Fatalf("共有リンクの実体が集約されていません: %+v", result)
 	}
 	target := result.Results[0]
-	if target.ResolvedPath != real || len(target.Aliases) != 3 || len(target.Links) != 2 || target.Findings[0].Source != real {
+	if target.ResolvedPath != real || len(target.Aliases) != 3 || len(target.Links) != 2 {
 		t.Fatalf("実体・別名・参照関係・記述元が一致しません: %+v", target)
 	}
 }
@@ -88,7 +88,7 @@ func TestBrokenAndCyclicLinks(t *testing.T) {
 	for _, tc := range []struct{ path, code string }{{broken, "link_broken"}, {a, "link_cycle"}, {self, "link_cycle"}} {
 		t.Run(tc.code+filepath.Base(tc.path), func(t *testing.T) {
 			result := scan.Run(scan.Options{Rules: []string{tc.path}})
-			if !hasCode(result.Results[0], tc.code, report.Error) || result.Counts.Error != 1 || result.ExitCode() != 2 {
+			if !hasCode(result.Results[0], tc.code, report.Error) || result.Counts.Error != 1 || result.ExitCode() != 1 {
 				t.Fatalf("リンクの失敗が区別されていません: %+v", result)
 			}
 		})
@@ -145,7 +145,11 @@ func TestPathAndTextFailures(t *testing.T) {
 				options = scan.Options{Skills: []string{tc.path}}
 			}
 			result := scan.Run(options)
-			if !hasCode(result.Results[0], tc.code, tc.category) || result.ExitCode() != 2 {
+			wantExit := 1
+			if tc.category == report.Unknown {
+				wantExit = 2
+			}
+			if !hasCode(result.Results[0], tc.code, tc.category) || result.ExitCode() != wantExit {
 				t.Fatalf("種類・不存在・判定不能が区別されていません: %+v", result)
 			}
 			data, _ := json.Marshal(result)
@@ -159,13 +163,13 @@ func TestPathAndTextFailures(t *testing.T) {
 func TestDirectSkillsOnly(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "直下スキル", "SKILL.md")
-	write(t, file, "模擬本文\n")
+	write(t, file, "---\nname: 直下スキル\ndescription: 説明\n---\n模擬本文\n")
 	write(t, filepath.Join(dir, "補助", "事例", "SKILL.md"), "入れ子は対象外\n")
 	write(t, filepath.Join(dir, "SKILL.md"), "親自身のファイルは対象外\n")
 	write(t, filepath.Join(dir, "通常ファイル"), "ディレクトリ以外は対象外\n")
 	result := scan.Run(scan.Options{Skills: []string{dir, dir}})
-	if len(result.Results) != 2 || result.Counts != (report.Counts{Unknown: 1}) || result.Coverage.Skills != report.Partial {
-		t.Fatalf("直下以外を走査したか、未実装を完了扱いにしています: %+v", result)
+	if len(result.Results) != 2 || result.Counts != (report.Counts{}) || result.Coverage.Skills != report.Completed {
+		t.Fatalf("直下以外を走査したか、スキル検査が完了していません: %+v", result)
 	}
 	for _, target := range result.Results {
 		if target.Kind == "skill" && target.ResolvedPath != file {

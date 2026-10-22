@@ -4,7 +4,7 @@
 
 利用者の指定により実装言語をGoとし、Windows 11・PowerShellで利用する単一の実行ファイルを作ります。最低対応版は[go.mod](../go.mod)、操作と検証の入口は[README](../README.md)を参照してください。公開先は未指定のため、モジュール名はローカル開発用の`rulecheck`とします。
 
-`cmd/rulecheck/main.go`がプロセスの入出力と終了を担い、`internal/cli`が引数処理・使い方・版番号・検査結果の表示を扱います。`internal/report`が結果型・分類別件数・状態・終了コードを定め、`internal/scan`がファイルと共有リンクの解決、読取確認、直下のスキル列挙、CLI候補の検索を実装しています。CLI版番号は`internal/version/version.go`から参照します。Markdown・YAMLの検査は未実装で、外部ライブラリはありません。
+`cmd/rulecheck/main.go`がプロセスの入出力と終了を担い、`internal/cli`が引数処理・使い方・版番号・検査結果の表示を扱います。`internal/report`が結果型・分類別件数・状態・終了コードを定め、`internal/scan`がファイルと共有リンク、Markdown参照、スキルの列挙・YAMLメタデータ・名前、CLI候補の検索を実装しています。CLI版番号は`internal/version/version.go`から参照します。構文解析にはgoldmarkとgo-yamlを使い、選定と固定版は[依存関係](dependencies.md)へ記録しています。
 
 検査本体は、次の順序でデータを扱う設計とします。必要な処理を実装するときにパッケージを分け、先に空の層を作りません。
 
@@ -32,7 +32,17 @@ M2では、明示されたファイルと直下の`SKILL.md`だけを読み取�
 
 UNCとデバイスパス、代替データストリームはメタデータを読む前に拒否します。ドライブ文字のパスも[WindowsのGetDriveTypeW](https://learn.microsoft.com/ja-jp/windows/win32/api/fileapi/nf-fileapi-getdrivetypew)で種別を確認し、ネットワーク・不明なドライブは開きません。実際のネットワークドライブへの割当や接続は検証では行っていません。種別の判定境界をテストし、通常のローカルドライブで受入確認しています。
 
-本文中の参照とYAMLの検査はM3の残りとして実装します。参照先本文の非読取など、解析後の境界の受入確認はM4へ残します。
+## MarkdownとYAMLの解析
+
+同一実体の集約と実体パスの確定後、本文を一度読み取ります。ハードリンクで実体パスが複数ある場合も、選ばれた昇順先頭の実体ディレクトリを基準にします。UTF-8のBOMは除去し、CRLFにも対応します。
+
+MarkdownはgoldmarkのCommonMark解析器で構文木を作り、通常・参照形式・画像のリンクを取り出します。コードブロックとインラインコードは対象外の診断へ変換し、その中を参照として解析しません。Markdownのエスケープ・文字参照を解き、見出しの断片を切り離してからパーセント符号化を一度だけ解きます。参照先は既存のローカル専用の解決へ渡し、通常ファイルまたはディレクトリであることを確認します。本文は開きません。成功した参照ごとの診断は増やさず、見出しの検査を省略した場合は対象外として残します。
+
+外部URIは値を転載せず対象外とします。`file:` URI、ドライブ基準の相対パス、問い合わせ文字列、不正な符号化、ネットワーク上の参照は判定不能です。未定義の参照形式・二重角括弧などは、構文木中の本文を装飾をまたいで確認し、リンクに似た記述を解釈できなかった旨を残します。成立済みリンクやコードの内容から独自参照を推測しません。HTMLの参照属性（`href`・`src`・`cite`・`formaction`など）と`url(...)`は未対応として残し、コメントと参照を持たないHTMLは参照検査に混ぜません。HTML・独自記法全体を検証するものではありません。
+
+スキルの先頭メタデータは単独行の`---`で囲まれた範囲です。go-yamlで構文木を取得し、対応表・重複キー・不正な別名や循環・複数文書を確認します。`name`と`description`は、文字列への自動変換を使わず節点の型と空白を除いた長さを検査します。別名とマージも型を保って解決します。不正な構文について解析器のエラー文を転載せず、固定した日本語の診断を返します。メタデータ部分を空白へ置き換えてMarkdown解析から除き、元の本文行番号を保ちます。終端がなく本文の開始位置を確定できない場合は、参照検査も判定不能にします。
+
+有効なスキル名は内部でのみ照合し、値そのものを出力しません。実体ディレクトリ名との差異と、集約済みの異なる実体間での重複を注意へ変換します。重複の診断には関係する実体パスを残します。
 
 ## CLI候補の検索
 
@@ -64,19 +74,22 @@ JSON形式の版番号の正本は`internal/report/report.go`の`SchemaVersion`�
 
 対象は`kind`・`target`の順、診断は`source`・`line`・`code`・`category`・`message`・`paths`の順に並べます。関係するパスと別名は文字列の昇順、リンクは`path`・`target`の順に並べ、重複を除きます。同じ種類の同一実体は1件にまとめます。スキルの親の別名は、子の`SKILL.md`の別名にも引き継ぎます。
 
-現段階の固定した`code`は次のとおりです。
+固定した`code`は次のとおりです。
 
 | 分類 | code |
 | --- | --- |
 | 引数誤り | `invalid_arguments` |
 | エラー | `path_missing`・`path_not_file`・`path_not_directory`・`link_broken`・`link_cycle`・`command_missing` |
 | 判定不能 | `path_unreadable`・`directory_unreadable`・`text_unsupported`・`path_not_local`・`link_limit`・`command_unresolved` |
-| 未実装による判定不能 | `rules_not_implemented`・`skills_not_implemented` |
+| 参照のエラー | `reference_missing`・`reference_link_broken`・`reference_link_cycle` |
+| 参照の判定不能 | `reference_unsupported`・`reference_unresolved`・`reference_unreadable`・`reference_not_local`・`reference_not_regular`・`reference_link_limit` |
+| メタデータのエラー | `metadata_missing`・`metadata_invalid`・`metadata_name_missing`・`metadata_name_invalid`・`metadata_description_missing`・`metadata_description_invalid` |
+| スキル名の注意 | `skill_name_duplicate`・`skill_name_mismatch` |
+| 参照の対象外 | `reference_external_skipped`・`reference_fragment_skipped`・`reference_code_skipped` |
 
-指示ファイルには参照検査、スキルの親にはメタデータと参照検査の未実装を1件ずつ残すため、それらを指定した`scan`は終了コード`2`です。CLIだけを指定した検査は候補ありなら`0`、不足ありなら`1`、判定不能ありなら`2`です。分類別件数と状態・終了コードは共通の結果型で決定し、通常表示とJSONで共用します。出力に失敗した場合は標準エラーへ日本語の診断を出し、終了コード`2`を返します。ただし引数誤りでは`64`を維持します。
+分類別件数と状態・終了コードは共通の結果型で決定し、通常表示とJSONで共用します。参照だけの判定不能は`coverage.references`へ反映し、指示ファイル自体の存在・読取確認まで未完了にしません。元ファイルを読めなかった場合や親ディレクトリを列挙できなかった場合は、参照検査も`partial`です。不在や不正なメタデータなど確定したエラーは、未実装の診断を追加せず終了コード`1`になります。参照の関係パスは元ファイルの別名で上書きしません。通常表示にも記述位置と関係パスを表示します。出力に失敗した場合は標準エラーへ日本語の診断を出し、終了コード`2`を返します。ただし引数誤りでは`64`を維持します。
 
 ## 後続実装で決める事項
 
-- MarkdownとYAMLの解析方式は未決定です。独自の簡易解析で受入条件を満たせると仮定せず、必要な構文と失敗例で候補を比較してから決めます。ライブラリを追加する場合は取得元・ライセンス・版を確認し、`go.mod`と`go.sum`で管理します。
-- 検査本体の診断用`code`は、M2以降で検査の実装とともに追加します。要件で求める安定性を保ち、未対応の検査を完了済みにしません。
+- 製品全体の受入確認はM4で結果と要件の対応を確定します。未対応の参照を検査済みとして扱わない境界も継続して確認します。
 - 初期のローカル成果物は`bin/rulecheck.exe`です。外部の公開先、配布経路、ライセンスは未決定で、初期設定では追加しません。

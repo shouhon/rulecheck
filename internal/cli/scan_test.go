@@ -95,39 +95,36 @@ func TestScanJSONContract(t *testing.T) {
 		"scan", "--rules", rules, "--skills=" + skills,
 		"--command", "rg", "--rules=" + other, "--json",
 	}, &stdout, &stderr)
-	if code != 2 || stderr.Len() != 0 {
-		t.Fatalf("未実装の検査: 終了コード=%d、標準エラー=%q", code, stderr.String())
+	if code != 1 || stderr.Len() != 0 {
+		t.Fatalf("CLI不足の検査: 終了コード=%d、標準エラー=%q", code, stderr.String())
 	}
 	result := decodeReport(t, stdout.String())
 	if result.SchemaVersion != 1 || result.Tool.Name != "rulecheck" || result.Tool.Version != version.Current || result.Command != "scan" {
 		t.Fatalf("JSONの識別情報が一致しません: %+v", result)
 	}
-	if result.Status != "incomplete" || result.ExitCode() != code || result.Counts != (report.Counts{Error: 1, Unknown: 3}) || len(result.Results) != 4 {
+	if result.Status != "failed" || result.ExitCode() != code || result.Counts != (report.Counts{Error: 1}) || len(result.Results) != 4 {
 		t.Fatalf("状態・件数・終了コードが一致しません: %+v", result)
 	}
 	if result.Coverage != (report.Coverage{
-		Rules: report.Completed, References: report.NotImplemented,
-		Skills: report.Partial, Commands: report.Completed,
+		Rules: report.Completed, References: report.Completed,
+		Skills: report.Completed, Commands: report.Completed,
 	}) {
-		t.Fatalf("未実装の範囲が一致しません: %+v", result.Coverage)
+		t.Fatalf("実施した範囲が一致しません: %+v", result.Coverage)
 	}
 	for _, target := range result.Results {
-		if len(target.Findings) != 1 {
+		if target.Kind != "command" && len(target.Findings) == 0 {
+			if target.ResolvedPath == "" || len(target.Aliases) != 1 || target.Aliases[0] != target.Target {
+				t.Fatalf("実体と別名が一致しません: %+v", target)
+			}
+			continue
+		}
+		if target.Kind != "command" || len(target.Findings) != 1 {
 			t.Fatalf("対象別の結果がありません: %+v", target)
 		}
 		finding := target.Findings[0]
-		wantCategory, wantCode := report.Unknown, target.Kind+"_not_implemented"
-		if target.Kind == "command" {
-			wantCategory, wantCode = report.Error, "command_missing"
-		}
+		wantCategory, wantCode := report.Error, "command_missing"
 		if finding.Category != wantCategory || finding.Code != wantCode || finding.Message == "" || finding.Paths == nil {
 			t.Fatalf("診断情報が一致しません: %+v", finding)
-		}
-		if target.Kind != "command" && (target.ResolvedPath == "" || len(target.Aliases) != 1 || target.Aliases[0] != target.Target) {
-			t.Fatalf("実体と別名が一致しません: %+v", target)
-		}
-		if target.Kind == "rules" && (finding.Source != target.ResolvedPath || len(finding.Paths) != 1 || finding.Paths[0] != target.Target) {
-			t.Fatalf("記述元と関係するパスが一致しません: %+v", finding)
 		}
 	}
 }
@@ -142,7 +139,7 @@ func TestScanDeterministicOutput(t *testing.T) {
 	var outputs []string
 	for _, args := range inputs {
 		var stdout, stderr bytes.Buffer
-		if code := cli.Run(args, &stdout, &stderr); code != 2 || stderr.Len() != 0 {
+		if code := cli.Run(args, &stdout, &stderr); code != 1 || stderr.Len() != 0 {
 			t.Fatalf("検査結果を出力できません: 終了コード=%d、標準エラー=%q", code, stderr.String())
 		}
 		outputs = append(outputs, stdout.String())
@@ -168,10 +165,10 @@ func TestScanUnrequestedCoverage(t *testing.T) {
 
 func TestScanJSONOptionIsNotInferredFromValue(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := cli.Run([]string{"scan", "--rules=--json"}, &stdout, &stderr); code != 2 {
+	if code := cli.Run([]string{"scan", "--rules=--json"}, &stdout, &stderr); code != 1 {
 		t.Fatalf("終了コード = %d", code)
 	}
-	if !strings.HasPrefix(stdout.String(), "検査未完了\n") || stderr.Len() != 0 {
+	if !strings.HasPrefix(stdout.String(), "エラーあり\n") || stderr.Len() != 0 {
 		t.Fatalf("パスをJSON指定と誤認しています: %q %q", stdout.String(), stderr.String())
 	}
 }

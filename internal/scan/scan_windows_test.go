@@ -3,12 +3,47 @@ package scan_test
 import (
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
 	"rulecheck/internal/report"
 	"rulecheck/internal/scan"
 )
+
+func TestWindowsReferenceDoesNotReadBody(t *testing.T) {
+	dir := t.TempDir()
+	referent := filepath.Join(dir, "参照先 空白.md")
+	write(t, referent, "模擬秘密値\n[再帰しない](missing.md)\x00")
+	name, err := syscall.UTF16PtrFromString(referent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := syscall.CreateFile(name, syscall.GENERIC_READ, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.CloseHandle(handle)
+	file := filepath.Join(dir, "rules.md")
+	write(t, file, "[相対](<参照先 空白.md>)\n[絶対](<"+filepath.ToSlash(referent)+">)\n[逆斜線](<"+referent+">)\n")
+	result := scan.Run(scan.Options{Rules: []string{file}})
+	if result.ExitCode() != 0 || result.Counts != (report.Counts{}) || result.Coverage.References != report.Completed {
+		t.Fatalf("参照先の本文を開こうとしたか、Windowsの絶対パスを解釈できません: %+v", result)
+	}
+}
+
+func TestWindowsReferenceSpecialPaths(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "rules.md")
+	for _, path := range []string{`NUL`, `CON`, `file.md:stream`, `\\?\UNC\invalid.example\share\file.md`} {
+		t.Run(path, func(t *testing.T) {
+			write(t, file, "[参照](<"+strings.ReplaceAll(path, `\`, `\\`)+">)\n")
+			result := scan.Run(scan.Options{Rules: []string{file}})
+			if result.ExitCode() != 2 || result.Counts.Unknown != 1 || result.Coverage.References != report.Partial {
+				t.Fatalf("特殊な参照を通常ファイルとして扱っています: %+v", result)
+			}
+		})
+	}
+}
 
 func TestWindowsUnreadableFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "読取不能.md")

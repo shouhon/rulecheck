@@ -36,6 +36,12 @@ func writeReport(result report.Report, asJSON bool, stdout, stderr io.Writer) in
 			}
 			for _, finding := range target.Findings {
 				fmt.Fprintf(&text, "  [%s] %s: %s\n", categories[finding.Category], finding.Code, finding.Message)
+				if finding.Source != "" && finding.Line > 0 {
+					fmt.Fprintf(&text, "    記述元: %q 行 %d\n", finding.Source, finding.Line)
+				}
+				if len(finding.Paths) > 0 {
+					fmt.Fprintf(&text, "    関係するパス: %q\n", finding.Paths)
+				}
 			}
 		}
 		fmt.Fprintf(&text, "件数: エラー %d / 注意 %d / 判定不能 %d / 対象外 %d\n",

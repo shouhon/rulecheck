@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"rulecheck/internal/report"
@@ -20,8 +21,10 @@ type Options struct {
 }
 
 type target struct {
-	result report.Result
-	info   fs.FileInfo
+	result   report.Result
+	info     fs.FileInfo
+	name     string
+	nameLine int
 }
 
 type scanner struct {
@@ -35,39 +38,48 @@ func Run(options Options) report.Report {
 		Skills: report.NotRequested, Commands: report.NotRequested,
 	}
 	if len(options.Rules) != 0 {
-		coverage.Rules, coverage.References = report.Completed, report.NotImplemented
+		coverage.Rules, coverage.References = report.Completed, report.Completed
 		for _, path := range sortedUnique(options.Rules) {
-			t, fresh := s.add("rules", path, false)
-			if fresh {
-				if t.info != nil {
-					checkText(t)
-				}
-				t.result.Findings = append(t.result.Findings, report.Finding{
-					Code: "rules_not_implemented", Category: report.Unknown,
-					Message: "Markdownの参照検査は未実装です。",
-				})
-			}
+			s.add("rules", path, false)
 		}
 	}
 	if len(options.Skills) != 0 {
-		coverage.Skills, coverage.References = report.Partial, report.NotImplemented
+		coverage.Skills, coverage.References = report.Completed, report.Completed
 		var roots []*target
 		for _, path := range sortedUnique(options.Skills) {
 			t, fresh := s.add("skills", path, true)
 			if fresh {
 				roots = append(roots, t)
-				t.result.Findings = append(t.result.Findings, report.Finding{
-					Code: "skills_not_implemented", Category: report.Unknown,
-					Message: "スキルのメタデータとMarkdownの参照検査は未実装です。",
-				})
 			}
 		}
 		for _, root := range roots {
 			if root.info != nil {
 				s.skills(root)
+			} else {
+				coverage.References = report.Partial
 			}
 		}
 	}
+	// 別名と実体パスを確定してから本文を読み、相対参照の基準を固定する。
+	for _, t := range s.targets {
+		if t.result.Kind != "rules" && t.result.Kind != "skill" {
+			continue
+		}
+		if t.info == nil {
+			coverage.References = report.Partial
+			continue
+		}
+		body, ok := checkText(t)
+		if !ok {
+			coverage.References = report.Partial
+			continue
+		}
+		if t.result.Kind == "skill" {
+			body = checkMetadata(t, body)
+		}
+		checkReferences(t, body)
+	}
+	s.checkSkillNames()
 	if len(options.Commands) != 0 {
 		coverage.Commands = report.Completed
 		for _, name := range sortedUnique(options.Commands) {
@@ -85,9 +97,11 @@ func Run(options Options) report.Report {
 		for i := range t.result.Findings {
 			f := &t.result.Findings[i]
 			if t.result.Kind != "command" {
-				f.Paths = append([]string{}, t.result.Aliases...)
-				if t.result.ResolvedPath != "" && !slices.Contains(f.Paths, t.result.ResolvedPath) {
-					f.Paths = append(f.Paths, t.result.ResolvedPath)
+				if f.Paths == nil {
+					f.Paths = append([]string{}, t.result.Aliases...)
+					if t.result.ResolvedPath != "" && !slices.Contains(f.Paths, t.result.ResolvedPath) {
+						f.Paths = append(f.Paths, t.result.ResolvedPath)
+					}
 				}
 				if t.result.Kind == "rules" || t.result.Kind == "skill" {
 					f.Source = t.result.ResolvedPath
@@ -96,8 +110,18 @@ func Run(options Options) report.Report {
 					}
 				}
 			}
-			if f.Category == report.Unknown && f.Code != "rules_not_implemented" && t.result.Kind == "rules" {
-				coverage.Rules = report.Partial
+			if f.Category == report.Unknown {
+				switch {
+				case strings.HasPrefix(f.Code, "reference_"):
+					coverage.References = report.Partial
+				case t.result.Kind == "rules":
+					coverage.Rules, coverage.References = report.Partial, report.Partial
+				case t.result.Kind == "skill" || t.result.Kind == "skills":
+					coverage.Skills = report.Partial
+					if !strings.HasPrefix(f.Code, "metadata_") {
+						coverage.References = report.Partial
+					}
+				}
 			}
 		}
 		results = append(results, t.result)
@@ -142,13 +166,16 @@ func (s *scanner) add(kind, path string, directory bool) (*target, bool) {
 	return t, true
 }
 
-func checkText(t *target) {
+func checkText(t *target) ([]byte, bool) {
 	body, err := os.ReadFile(t.result.ResolvedPath)
 	if err != nil {
 		t.result.Findings = append(t.result.Findings, report.Finding{Code: "path_unreadable", Category: report.Unknown, Message: "対象の本文を読み取れません。"})
 	} else if !utf8.Valid(body) || bytes.IndexByte(body, 0) >= 0 {
 		t.result.Findings = append(t.result.Findings, report.Finding{Code: "text_unsupported", Category: report.Unknown, Message: "UTF-8の通常テキストとして本文を解釈できません。"})
+	} else {
+		return bytes.TrimPrefix(body, []byte{0xef, 0xbb, 0xbf}), true
 	}
+	return nil, false
 }
 
 func (s *scanner) skills(root *target) {
@@ -178,10 +205,7 @@ func (s *scanner) skills(root *target) {
 		}
 		for _, alias := range root.result.Aliases {
 			path := filepath.Join(alias, entry.Name(), "SKILL.md")
-			t, fresh := s.add("skill", path, false)
-			if fresh && t.info != nil {
-				checkText(t)
-			}
+			s.add("skill", path, false)
 		}
 	}
 }
