@@ -25,6 +25,8 @@ const (
 	NotRequested   = "not_requested"
 	NotImplemented = "not_implemented"
 	NotRun         = "not_run"
+	Completed      = "completed"
+	Partial        = "partial"
 )
 
 type Tool struct {
@@ -49,9 +51,18 @@ type Finding struct {
 }
 
 type Result struct {
-	Kind     string    `json:"kind"`
-	Target   string    `json:"target"`
-	Findings []Finding `json:"findings"`
+	Kind         string    `json:"kind"`
+	Target       string    `json:"target"`
+	Aliases      []string  `json:"aliases,omitempty"`
+	ResolvedPath string    `json:"resolved_path,omitempty"`
+	Links        []Link    `json:"links,omitempty"`
+	Findings     []Finding `json:"findings"`
+}
+
+// Link は実体の解決中に通ったリンクと、そこに記録された参照先を表す。
+type Link struct {
+	Path   string `json:"path"`
+	Target string `json:"target"`
 }
 
 type Counts struct {
@@ -83,6 +94,12 @@ func New(coverage Coverage, results []Result) Report {
 	}
 	for i := range r.Results {
 		result := &r.Results[i]
+		slices.Sort(result.Aliases)
+		result.Aliases = slices.Compact(result.Aliases)
+		slices.SortFunc(result.Links, func(a, b Link) int {
+			return cmp.Or(cmp.Compare(a.Path, b.Path), cmp.Compare(a.Target, b.Target))
+		})
+		result.Links = slices.Compact(result.Links)
 		if result.Findings == nil {
 			result.Findings = []Finding{}
 		}

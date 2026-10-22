@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"rulecheck/internal/report"
+	"rulecheck/internal/scan"
 	"rulecheck/internal/version"
 )
 
@@ -25,7 +26,8 @@ const help = `rulecheck は、明示された指示ファイル・スキル・CL
 検査範囲:
   明示した対象だけを読み取り、ファイルや設定の変更、外部URLへの接続は行いません。
 
-現在は検査本体が未実装です。指定した対象は判定不能として報告し、終了コード2を返します。
+ファイルと共有リンク、直下のスキルの列挙に対応しています。
+Markdown・メタデータ・CLIの検査は未実装のため、検査未完了として終了コード2を返します。
 `
 
 // Run は処理結果の終了コードを返す。プロセスの終了は呼び出し元が行う。
@@ -61,7 +63,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			}
 			return 64
 		}
-		result := pendingReport(options)
+		result := scan.Run(scan.Options{Rules: options.rules, Skills: options.skills, Commands: options.commands})
 		return writeReport(result, options.json, stdout, stderr)
 	default:
 		return invalidArguments(stderr)

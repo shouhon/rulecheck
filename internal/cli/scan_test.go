@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -74,10 +76,22 @@ func TestScanInvalidArguments(t *testing.T) {
 }
 
 func TestScanJSONContract(t *testing.T) {
+	dir := t.TempDir()
+	rules := filepath.Join(dir, "日本語 空白.md")
+	other := filepath.Join(dir, "別ファイル.md")
+	skills := filepath.Join(dir, "スキル 親")
+	for _, path := range []string{rules, other} {
+		if err := os.WriteFile(path, []byte("模擬の指示\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(skills, 0700); err != nil {
+		t.Fatal(err)
+	}
 	var stdout, stderr bytes.Buffer
 	code := cli.Run([]string{
-		"scan", "--rules", "日本語 空白/AGENTS.md", "--skills=スキル 親",
-		"--command", "rg", "--rules=別名.md", "--json",
+		"scan", "--rules", rules, "--skills=" + skills,
+		"--command", "rg", "--rules=" + other, "--json",
 	}, &stdout, &stderr)
 	if code != 2 || stderr.Len() != 0 {
 		t.Fatalf("未実装の検査: 終了コード=%d、標準エラー=%q", code, stderr.String())
@@ -90,8 +104,8 @@ func TestScanJSONContract(t *testing.T) {
 		t.Fatalf("状態・件数・終了コードが一致しません: %+v", result)
 	}
 	if result.Coverage != (report.Coverage{
-		Rules: report.NotImplemented, References: report.NotImplemented,
-		Skills: report.NotImplemented, Commands: report.NotImplemented,
+		Rules: report.Completed, References: report.NotImplemented,
+		Skills: report.Partial, Commands: report.NotImplemented,
 	}) {
 		t.Fatalf("未実装の範囲が一致しません: %+v", result.Coverage)
 	}
@@ -103,7 +117,10 @@ func TestScanJSONContract(t *testing.T) {
 		if finding.Category != report.Unknown || finding.Code != target.Kind+"_not_implemented" || finding.Message == "" || finding.Paths == nil {
 			t.Fatalf("診断情報が一致しません: %+v", finding)
 		}
-		if target.Kind == "rules" && (finding.Source != target.Target || len(finding.Paths) != 1 || finding.Paths[0] != target.Target) {
+		if target.Kind != "command" && (target.ResolvedPath == "" || len(target.Aliases) != 1 || target.Aliases[0] != target.Target) {
+			t.Fatalf("実体と別名が一致しません: %+v", target)
+		}
+		if target.Kind == "rules" && (finding.Source != target.ResolvedPath || len(finding.Paths) != 1 || finding.Paths[0] != target.Target) {
 			t.Fatalf("記述元と関係するパスが一致しません: %+v", finding)
 		}
 	}

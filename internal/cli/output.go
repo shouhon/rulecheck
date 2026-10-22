@@ -21,10 +21,19 @@ func writeReport(result report.Report, asJSON bool, stdout, stderr io.Writer) in
 		categories := map[report.Category]string{
 			report.Error: "エラー", report.Warning: "注意", report.Unknown: "判定不能", report.Skipped: "対象外",
 		}
-		kinds := map[string]string{"rules": "指示ファイル", "skills": "スキルの親ディレクトリ", "command": "CLI"}
+		kinds := map[string]string{"rules": "指示ファイル", "skills": "スキルの親ディレクトリ", "skill": "スキル", "command": "CLI"}
 		fmt.Fprintln(&text, status[result.Status])
 		for _, target := range result.Results {
 			fmt.Fprintf(&text, "対象: %s %q\n", kinds[target.Kind], target.Target)
+			if target.ResolvedPath != "" {
+				fmt.Fprintf(&text, "  実体: %q\n", target.ResolvedPath)
+			}
+			if len(target.Aliases) > 1 {
+				fmt.Fprintf(&text, "  別名: %q\n", target.Aliases)
+			}
+			for _, link := range target.Links {
+				fmt.Fprintf(&text, "  共有リンク: %q → %q\n", link.Path, link.Target)
+			}
 			for _, finding := range target.Findings {
 				fmt.Fprintf(&text, "  [%s] %s: %s\n", categories[finding.Category], finding.Code, finding.Message)
 			}
