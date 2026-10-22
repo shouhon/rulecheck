@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/report"
 )
 
 // TestExecutableMappedDrives は明示された割当ドライブを使う。共有内には何も作らない。

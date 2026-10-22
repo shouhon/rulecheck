@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"rulecheck/internal/report"
-	"rulecheck/internal/version"
+	"github.com/shouhon/rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/version"
 )
 
 const secret = "acceptance-secret-do-not-print"

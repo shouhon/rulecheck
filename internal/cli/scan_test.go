@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"rulecheck/internal/cli"
-	"rulecheck/internal/report"
-	"rulecheck/internal/version"
+	"github.com/shouhon/rulecheck/internal/cli"
+	"github.com/shouhon/rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/version"
 )
 
 func decodeReport(t *testing.T, output string) report.Report {

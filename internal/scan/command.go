@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/report"
 )
 
 // checkCommand はPATHにあるローカルの候補を調べ、本文の読取も起動も行わない。

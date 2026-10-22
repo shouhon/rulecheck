@@ -8,7 +8,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/report"
 )
 
 // checkMetadata は値を診断へ転載せず、Markdownの解析から先頭メタデータを除く。

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/report"
 )
 
 var (

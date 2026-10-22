@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	"rulecheck/internal/report"
-	"rulecheck/internal/scan"
-	"rulecheck/internal/version"
+	"github.com/shouhon/rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/scan"
+	"github.com/shouhon/rulecheck/internal/version"
 )
 
 const help = `rulecheck は、明示された指示ファイル・スキル・CLIの存在関係を検査するツールです。

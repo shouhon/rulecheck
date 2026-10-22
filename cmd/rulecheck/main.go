@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"rulecheck/internal/cli"
+	"github.com/shouhon/rulecheck/internal/cli"
 )
 
 func main() {

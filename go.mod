@@ -1,4 +1,4 @@
-module rulecheck
+module github.com/shouhon/rulecheck
 
 go 1.27.3
 

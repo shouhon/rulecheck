@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"rulecheck/internal/cli"
-	"rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/cli"
+	"github.com/shouhon/rulecheck/internal/report"
 )
 
 func TestCommandScanOutput(t *testing.T) {

@@ -15,7 +15,7 @@ import (
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 
-	"rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/report"
 )
 
 var uriScheme = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)

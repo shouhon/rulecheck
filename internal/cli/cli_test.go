@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"rulecheck/internal/cli"
-	"rulecheck/internal/version"
+	"github.com/shouhon/rulecheck/internal/cli"
+	"github.com/shouhon/rulecheck/internal/version"
 )
 
 func TestRun(t *testing.T) {

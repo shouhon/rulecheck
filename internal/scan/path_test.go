@@ -4,7 +4,7 @@ import (
 	"io/fs"
 	"testing"
 
-	"rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/report"
 )
 
 func TestUnsupportedLinkIsUnknown(t *testing.T) {

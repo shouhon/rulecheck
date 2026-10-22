@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"rulecheck/internal/version"
+	"github.com/shouhon/rulecheck/internal/version"
 )
 
 // SchemaVersion はJSON形式の版番号の正本。CLIの版とは独立して管理する。

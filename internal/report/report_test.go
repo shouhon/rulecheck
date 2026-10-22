@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/report"
 )
 
 func TestClassificationAndExitPriority(t *testing.T) {

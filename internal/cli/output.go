@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/report"
 )
 
 func writeReport(result report.Report, asJSON bool, stdout, stderr io.Writer) int {

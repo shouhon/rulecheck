@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"rulecheck/internal/report"
-	"rulecheck/internal/scan"
+	"github.com/shouhon/rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/scan"
 )
 
 func TestMarkdownLocalReferences(t *testing.T) {

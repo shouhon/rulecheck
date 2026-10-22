@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"rulecheck/internal/report"
+	"github.com/shouhon/rulecheck/internal/report"
 )
 
 type Options struct {
