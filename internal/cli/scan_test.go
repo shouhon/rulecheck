@@ -77,6 +77,8 @@ func TestScanInvalidArguments(t *testing.T) {
 
 func TestScanJSONContract(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	t.Setenv("PATHEXT", ".EXE")
 	rules := filepath.Join(dir, "日本語 空白.md")
 	other := filepath.Join(dir, "別ファイル.md")
 	skills := filepath.Join(dir, "スキル 親")
@@ -100,12 +102,12 @@ func TestScanJSONContract(t *testing.T) {
 	if result.SchemaVersion != 1 || result.Tool.Name != "rulecheck" || result.Tool.Version != version.Current || result.Command != "scan" {
 		t.Fatalf("JSONの識別情報が一致しません: %+v", result)
 	}
-	if result.Status != "incomplete" || result.ExitCode() != code || result.Counts != (report.Counts{Unknown: 4}) || len(result.Results) != 4 {
+	if result.Status != "incomplete" || result.ExitCode() != code || result.Counts != (report.Counts{Error: 1, Unknown: 3}) || len(result.Results) != 4 {
 		t.Fatalf("状態・件数・終了コードが一致しません: %+v", result)
 	}
 	if result.Coverage != (report.Coverage{
 		Rules: report.Completed, References: report.NotImplemented,
-		Skills: report.Partial, Commands: report.NotImplemented,
+		Skills: report.Partial, Commands: report.Completed,
 	}) {
 		t.Fatalf("未実装の範囲が一致しません: %+v", result.Coverage)
 	}
@@ -114,7 +116,11 @@ func TestScanJSONContract(t *testing.T) {
 			t.Fatalf("対象別の結果がありません: %+v", target)
 		}
 		finding := target.Findings[0]
-		if finding.Category != report.Unknown || finding.Code != target.Kind+"_not_implemented" || finding.Message == "" || finding.Paths == nil {
+		wantCategory, wantCode := report.Unknown, target.Kind+"_not_implemented"
+		if target.Kind == "command" {
+			wantCategory, wantCode = report.Error, "command_missing"
+		}
+		if finding.Category != wantCategory || finding.Code != wantCode || finding.Message == "" || finding.Paths == nil {
 			t.Fatalf("診断情報が一致しません: %+v", finding)
 		}
 		if target.Kind != "command" && (target.ResolvedPath == "" || len(target.Aliases) != 1 || target.Aliases[0] != target.Target) {
@@ -127,6 +133,8 @@ func TestScanJSONContract(t *testing.T) {
 }
 
 func TestScanDeterministicOutput(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("PATHEXT", ".EXE")
 	inputs := [][]string{
 		{"scan", "--rules", "b.md", "--rules", "a.md", "--command", "rg", "--skills", "skills", "--json"},
 		{"scan", "--json", "--skills=skills", "--command=rg", "--rules=a.md", "--rules=b.md", "--rules=a.md", "--command=rg"},
@@ -145,12 +153,14 @@ func TestScanDeterministicOutput(t *testing.T) {
 }
 
 func TestScanUnrequestedCoverage(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("PATHEXT", ".EXE")
 	var stdout, stderr bytes.Buffer
 	cli.Run([]string{"scan", "--command=模擬CLI", "--json"}, &stdout, &stderr)
 	result := decodeReport(t, stdout.String())
 	if result.Coverage != (report.Coverage{
 		Rules: report.NotRequested, References: report.NotRequested,
-		Skills: report.NotRequested, Commands: report.NotImplemented,
+		Skills: report.NotRequested, Commands: report.Completed,
 	}) {
 		t.Fatalf("指定していない範囲が検査対象になっています: %+v", result.Coverage)
 	}
@@ -173,6 +183,8 @@ func (failingWriter) Write([]byte) (int, error) {
 }
 
 func TestScanOutputFailure(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("PATHEXT", ".EXE")
 	for _, asJSON := range []bool{false, true} {
 		args := []string{"scan", "--command=rg"}
 		if asJSON {

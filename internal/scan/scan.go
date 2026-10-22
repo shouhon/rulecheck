@@ -69,12 +69,15 @@ func Run(options Options) report.Report {
 		}
 	}
 	if len(options.Commands) != 0 {
-		coverage.Commands = report.NotImplemented
+		coverage.Commands = report.Completed
 		for _, name := range sortedUnique(options.Commands) {
-			s.targets = append(s.targets, &target{result: report.Result{
-				Kind: "command", Target: name,
-				Findings: []report.Finding{{Code: "command_not_implemented", Category: report.Unknown, Message: "PATHからCLIを探す検査は未実装です。"}},
-			}})
+			result := checkCommand(name)
+			for _, finding := range result.Findings {
+				if finding.Category == report.Unknown {
+					coverage.Commands = report.Partial
+				}
+			}
+			s.targets = append(s.targets, &target{result: result})
 		}
 	}
 	var results []report.Result

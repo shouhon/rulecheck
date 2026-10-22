@@ -4,7 +4,7 @@
 
 利用者の指定により実装言語をGoとし、Windows 11・PowerShellで利用する単一の実行ファイルを作ります。最低対応版は[go.mod](../go.mod)、操作と検証の入口は[README](../README.md)を参照してください。公開先は未指定のため、モジュール名はローカル開発用の`rulecheck`とします。
 
-`cmd/rulecheck/main.go`がプロセスの入出力と終了を担い、`internal/cli`が引数処理・使い方・版番号・検査結果の表示を扱います。`internal/report`が結果型・分類別件数・状態・終了コードを定め、`internal/scan`がファイルと共有リンクの解決、読取確認、直下のスキル列挙を実装しています。CLI版番号は`internal/version/version.go`から参照します。Markdown・YAML・CLIの検査は未実装で、外部ライブラリはありません。
+`cmd/rulecheck/main.go`がプロセスの入出力と終了を担い、`internal/cli`が引数処理・使い方・版番号・検査結果の表示を扱います。`internal/report`が結果型・分類別件数・状態・終了コードを定め、`internal/scan`がファイルと共有リンクの解決、読取確認、直下のスキル列挙、CLI候補の検索を実装しています。CLI版番号は`internal/version/version.go`から参照します。Markdown・YAMLの検査は未実装で、外部ライブラリはありません。
 
 検査本体は、次の順序でデータを扱う設計とします。必要な処理を実装するときにパッケージを分け、先に空の層を作りません。
 
@@ -32,7 +32,15 @@ M2では、明示されたファイルと直下の`SKILL.md`だけを読み取�
 
 UNCとデバイスパス、代替データストリームはメタデータを読む前に拒否します。ドライブ文字のパスも[WindowsのGetDriveTypeW](https://learn.microsoft.com/ja-jp/windows/win32/api/fileapi/nf-fileapi-getdrivetypew)で種別を確認し、ネットワーク・不明なドライブは開きません。実際のネットワークドライブへの割当や接続は検証では行っていません。種別の判定境界をテストし、通常のローカルドライブで受入確認しています。
 
-本文中の参照、YAML、CLIの検査はM3で実装します。参照先本文の非読取など、解析後の境界の受入確認はM4へ残します。
+本文中の参照とYAMLの検査はM3の残りとして実装します。参照先本文の非読取など、解析後の境界の受入確認はM4へ残します。
+
+## CLI候補の検索
+
+現在の`PATH`だけを指定順に調べ、通常ファイルの候補が1つ見つかれば存在確認を完了します。Windowsの拡張子は`PATHEXT`の順序を使い、空の場合は`.COM;.EXE;.BAT;.CMD`を使います。拡張子を含む名前は、その名前自体も先に調べます。この扱いは[GoのWindows向け候補検索](https://go.dev/src/os/exec/lp_windows.go)を参照しました。候補の実行は行わないため、ファイルの実行可能性や起動時に実際に選ばれるコマンドまでは保証しません。
+
+`os/exec.LookPath`へ検索を任せると、ネットワーク上の`PATH`やリンク先を存在確認時に開く可能性があります。このため、既存のローカル専用のパス解決を使い、候補本文を開かずに種類と実体だけを確認します。暗黙の作業ディレクトリ検索は追加しません。`PATH`に明記された相対ディレクトリは解決し、空の要素は無視します。拡張子設定に区切り文字や特殊なパスを組み立てる値があれば、その設定を使わず判定不能の要因として残します。
+
+確認できる候補がなく、検索先にネットワーク上のパス・権限不足・解決回数の上限などが残れば`command_unresolved`とします。検索できた範囲で不在、ディレクトリ、リンク切れ・循環しかない場合は`command_missing`とします。別のローカルの検索先で候補を確認できれば、候補の存在という判定は完了しています。PowerShellの関数・エイリアス、本文中のコードからのCLI名抽出は行いません。
 
 ## 結果の形式
 
@@ -50,7 +58,7 @@ JSON形式の版番号の正本は`internal/report/report.go`の`SchemaVersion`�
 
 `coverage`は、指示ファイルと共有リンクを`rules`、Markdown参照を`references`、直下のスキルの列挙と基本項目を`skills`、CLI候補検索を`commands`で表します。未指定は`not_requested`、未実装は`not_implemented`、引数誤りで開始しなかった場合は`not_run`です。実施済みの検査は`completed`、一部だけ実施または判定不能がある検査は`partial`です。エラーを確定できた場合も、その項目の判定自体は実施済みです。指示ファイルかスキルが指定されると、Markdown参照の検査も必要とします。
 
-対象の`kind`は`rules`・`skills`・`skill`・`command`です。`skills`は指定した親、`skill`は直下で見つかった`SKILL.md`または解決に失敗した子リンクを表します。不正引数の結果に限り`arguments`とし、`target`を空文字列にします。ファイル系の`target`はまとめた指定のうち文字列の昇順で最初のものとし、`aliases`に指定された別名を残します。`resolved_path`はリンク解決後の絶対パスです。ハードリンクで複数ある場合は昇順で最初の実体パスを選びます。`links`は通過したリンクの`path`と、そこに記録された`target`の組です。解決に失敗した実体パスや、空のリンク配列は省略します。
+対象の`kind`は`rules`・`skills`・`skill`・`command`です。`skills`は指定した親、`skill`は直下で見つかった`SKILL.md`または解決に失敗した子リンクを表します。不正引数の結果に限り`arguments`とし、`target`を空文字列にします。ファイル系の`target`はまとめた指定のうち文字列の昇順で最初のものとし、`aliases`に指定された別名を残します。`resolved_path`はリンク解決後の絶対パスです。ハードリンクで複数ある場合は昇順で最初の実体パスを選びます。CLIでは最初に確認できた候補の実体パスを`resolved_path`へ入れます。`links`は通過したリンクの`path`と、そこに記録された`target`の組です。解決に失敗した実体パスや、空のリンク配列は省略します。
 
 `findings`の各診断は`code`・`category`・`message`・`source`・`paths`を持ち、行番号が分かる場合だけ`line`を含めます。記述元は解決できた実体パス、解決できなければ指定パスとし、親ディレクトリやCLIの診断では空文字列にします。関係するパスがなければ`paths`は空配列です。本文やYAMLの値、不正な引数の値は診断へ転載しません。
 
@@ -61,11 +69,11 @@ JSON形式の版番号の正本は`internal/report/report.go`の`SchemaVersion`�
 | 分類 | code |
 | --- | --- |
 | 引数誤り | `invalid_arguments` |
-| エラー | `path_missing`・`path_not_file`・`path_not_directory`・`link_broken`・`link_cycle` |
-| 判定不能 | `path_unreadable`・`directory_unreadable`・`text_unsupported`・`path_not_local`・`link_limit` |
-| 未実装による判定不能 | `rules_not_implemented`・`skills_not_implemented`・`command_not_implemented` |
+| エラー | `path_missing`・`path_not_file`・`path_not_directory`・`link_broken`・`link_cycle`・`command_missing` |
+| 判定不能 | `path_unreadable`・`directory_unreadable`・`text_unsupported`・`path_not_local`・`link_limit`・`command_unresolved` |
+| 未実装による判定不能 | `rules_not_implemented`・`skills_not_implemented` |
 
-指示ファイルには参照検査、スキルの親にはメタデータと参照検査の未実装を1件ずつ残すため、現在の`scan`は有効な引数でも終了コード`2`です。分類別件数と状態・終了コードは共通の結果型で決定し、通常表示とJSONで共用します。出力に失敗した場合は標準エラーへ日本語の診断を出し、終了コード`2`を返します。ただし引数誤りでは`64`を維持します。
+指示ファイルには参照検査、スキルの親にはメタデータと参照検査の未実装を1件ずつ残すため、それらを指定した`scan`は終了コード`2`です。CLIだけを指定した検査は候補ありなら`0`、不足ありなら`1`、判定不能ありなら`2`です。分類別件数と状態・終了コードは共通の結果型で決定し、通常表示とJSONで共用します。出力に失敗した場合は標準エラーへ日本語の診断を出し、終了コード`2`を返します。ただし引数誤りでは`64`を維持します。
 
 ## 後続実装で決める事項
 
