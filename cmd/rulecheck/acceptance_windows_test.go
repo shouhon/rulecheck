@@ -179,6 +179,69 @@ func TestExecutableAcceptance(t *testing.T) {
 		}
 	})
 
+	t.Run("ネットワーク上の対象を判定不能にする", func(t *testing.T) {
+		// 実在する共有や認証情報は使わず、ループバック宛ての模擬パスを渡す。
+		remote := `\\127.0.0.1\rulecheck-acceptance`
+		for _, tc := range []struct {
+			name, path string
+		}{
+			{"UNC", remote},
+			{"拡張長UNC", `\\?\UNC\127.0.0.1\rulecheck-acceptance`},
+			{"スラッシュ区切り", "//127.0.0.1/rulecheck-acceptance"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				f := newFixture(t, binary)
+				watchFixture(t, f.root)
+				for _, option := range []string{"--rules", "--skills"} {
+					r, _ := f.check(t, []string{option, tc.path}, "incomplete", 2, report.Counts{Unknown: 1})
+					finding := requireFinding(t, r, "path_not_local")
+					if finding.Category != report.Unknown || len(r.Results) != 1 || r.Results[0].ResolvedPath != "" {
+						t.Fatal("ネットワーク上の指定をローカルの実体として扱っています")
+					}
+				}
+			})
+		}
+		t.Run("本文に書かれたネットワーク参照", func(t *testing.T) {
+			f := newFixture(t, binary)
+			writeFile(t, f.path("AGENTS.md"), "[通常](//127.0.0.1/rulecheck-acceptance/資料.md)\n"+
+				"[参照形式][共有]\n![画像](%5C%5C127.0.0.1%5Crulecheck-acceptance%5C資料.png)\n\n"+
+				"[共有]: <"+remote+"\\資料.md>\n")
+			watchFixture(t, f.root)
+			r, _ := f.check(t, []string{"--rules=AGENTS.md"}, "incomplete", 2, report.Counts{Unknown: 3})
+			if r.Coverage.Rules != report.Completed || r.Coverage.References != report.Partial {
+				t.Fatal("ネットワーク参照の判定不能が検査範囲に反映されていません")
+			}
+			for i, finding := range resultOf(t, r, "rules")[0].Findings {
+				if finding.Code != "reference_unsupported" || finding.Category != report.Unknown || finding.Line != i+1 || len(finding.Paths) != 0 {
+					t.Fatal("ネットワーク参照の種類・記述位置が一致しません")
+				}
+			}
+		})
+		for _, tc := range []struct {
+			name, link, target, finding string
+			args                        []string
+			directory                   bool
+		}{
+			{"指定ファイルのリンク", "別名.md", remote + `\AGENTS.md`, "path_not_local", []string{"--rules=別名.md"}, false},
+			{"スキルの親のリンク", "skills", remote, "path_not_local", []string{"--skills=skills"}, true},
+			{"直下のスキルのリンク", "skills/remote", remote, "path_not_local", []string{"--skills=skills"}, true},
+			{"スキルファイルのリンク", "skills/remote/SKILL.md", remote + `\SKILL.md`, "path_not_local", []string{"--skills=skills"}, false},
+			{"本文から参照するリンク", "別名.md", remote + `\資料.md`, "reference_not_local", []string{"--rules=AGENTS.md"}, false},
+			{"PATHのリンク", "tools", remote, "command_unresolved", []string{"--command=mock"}, true},
+			{"CLI候補のリンク", "tools/remote.cmd", remote + `\mock.cmd`, "command_unresolved", []string{"--command=remote"}, false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				f := fixture{t.TempDir(), binary}
+				writeFile(t, f.path("AGENTS.md"), "[資料](別名.md)\n")
+				writeFile(t, f.path("profile", "設定.txt"), secret)
+				makeRemoteSymlink(t, tc.target, f.path(tc.link), tc.directory)
+				watchFixture(t, f.root)
+				r, _ := f.check(t, tc.args, "incomplete", 2, report.Counts{Unknown: 1})
+				requireFinding(t, r, tc.finding)
+			})
+		}
+	})
+
 	t.Run("メタデータと直下だけの列挙", func(t *testing.T) {
 		f := newFixture(t, binary)
 		for name, metadata := range map[string]string{
@@ -428,6 +491,29 @@ func makeSymlink(t *testing.T, target, path string) {
 	}
 	if err := os.Symlink(target, path); err != nil {
 		t.Skipf("共有リンクを作成できないため、この受入条件は未確認: %v", err)
+	}
+}
+
+func makeRemoteSymlink(t *testing.T, target, path string, directory bool) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	name, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination, err := syscall.UTF16PtrFromString(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 種類を明示し、作成側でもネットワーク先の属性を確認しない。
+	flags := uint32(2) // 開発者モードでのリンク作成を許す。
+	if directory {
+		flags |= 1
+	}
+	if err := syscall.CreateSymbolicLink(name, destination, flags); err != nil {
+		t.Skipf("ネットワーク向けの共有リンクを作成できないため未確認: %v", err)
 	}
 }
 
