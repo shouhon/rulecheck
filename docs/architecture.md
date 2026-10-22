@@ -4,7 +4,7 @@
 
 利用者の指定により実装言語をGoとし、Windows 11・PowerShellで利用する単一の実行ファイルを作ります。最低対応版は[go.mod](../go.mod)、操作と検証の入口は[README](../README.md)を参照してください。公開先は未指定のため、モジュール名はローカル開発用の`rulecheck`とします。
 
-`cmd/rulecheck/main.go`がプロセスの入出力と終了を担い、`internal/cli`が使い方・版番号を表示します。CLI版番号は`internal/version/version.go`から参照します。現段階の実装はここまでで、外部ライブラリはありません。
+`cmd/rulecheck/main.go`がプロセスの入出力と終了を担い、`internal/cli`が引数処理・使い方・版番号・検査結果の表示を扱います。`internal/report`が結果型・分類別件数・状態・終了コードを定めます。CLI版番号は`internal/version/version.go`から参照します。検査本体は未実装で、外部ライブラリはありません。
 
 検査本体は、次の順序でデータを扱う設計とします。必要な処理を実装するときにパッケージを分け、先に空の層を作りません。
 
@@ -30,9 +30,31 @@
 
 これらは後続実装で満たす制約です。現時点では検査処理自体が存在しないため、受入確認は未実施です。
 
+## 結果の形式
+
+JSON形式の版番号の正本は`internal/report/report.go`の`SchemaVersion`です。初回は`1`とし、次の項目をJSONオブジェクト1件として出力します。
+
+| 項目 | 現在の実装 |
+| --- | --- |
+| `schema_version` | JSON形式の版番号 |
+| `tool` | `name`は`rulecheck`、`version`はCLI版番号の正本から取得 |
+| `command` | `scan` |
+| `status` | 分類別件数から決定する状態。不正引数の場合は`invalid_arguments` |
+| `coverage` | `rules`・`references`・`skills`・`commands`の検査範囲ごとの実施状況 |
+| `results` | 対象の`kind`・`target`と、その対象に属する`findings`の配列 |
+| `counts` | 診断の分類別件数。対象数ではなく、`findings`の件数を集計 |
+
+`coverage`は、指示ファイルと共有リンクを`rules`、Markdown参照を`references`、直下のスキルの列挙と基本項目を`skills`、CLI候補検索を`commands`で表します。現段階の値は、未指定が`not_requested`、指定されたが未実装なら`not_implemented`、引数誤りで開始しなかった場合は`not_run`です。指示ファイルかスキルが指定されると、Markdown参照の検査も必要とします。
+
+対象の`kind`は`rules`・`skills`・`command`です。不正引数の結果に限り`arguments`とし、`target`を空文字列にします。`findings`の各診断は`code`・`category`・`message`・`source`・`paths`を持ち、行番号が分かる場合だけ`line`を含めます。記述元が不明なら`source`は空文字列、関係するパスがなければ`paths`は空配列です。本文やYAMLの値、不正な引数の値は診断へ転載しません。
+
+対象は`kind`・`target`の順、診断は`source`・`line`・`code`・`category`・`message`・`paths`の順に並べます。関係するパスも並べ替えます。並びは文字列の昇順です。完全に同じ種類・文字列の再指定はまとめますが、相対・絶対パスや共有リンクによる別名の識別はM2で行います。
+
+現段階の固定した`code`は、不正引数の`invalid_arguments`、未実装の`rules_not_implemented`・`skills_not_implemented`・`command_not_implemented`です。未実装の診断は`unknown`となります。分類別件数と状態・終了コードは共通の結果型で決定し、通常表示とJSONで共用します。出力に失敗した場合は標準エラーへ日本語の診断を出し、終了コード`2`を返します。ただし引数誤りでは`64`を維持します。
+
 ## 後続実装で決める事項
 
 - MarkdownとYAMLの解析方式は未決定です。独自の簡易解析で受入条件を満たせると仮定せず、必要な構文と失敗例で候補を比較してから決めます。ライブラリを追加する場合は取得元・ライセンス・版を確認し、`go.mod`と`go.sum`で管理します。
 - Windowsのシンボリックリンク・共有リンクの扱いと、同一実体の識別方式は、模擬ファイルを使った実機確認に基づいて決めます。
-- JSONの構造と各`code`は、引数処理・出力実装の工程で具体化します。要件で求める安定性を保ち、未対応の検査を完了済みにしません。
+- 検査本体の診断用`code`は、M2以降で検査の実装とともに追加します。要件で求める安定性を保ち、未対応の検査を完了済みにしません。
 - 初期のローカル成果物は`bin/rulecheck.exe`です。外部の公開先、配布経路、ライセンスは未決定で、初期設定では追加しません。

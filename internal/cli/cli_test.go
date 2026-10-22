@@ -25,9 +25,8 @@ func TestRun(t *testing.T) {
 		{name: "不明なコマンド", args: []string{"unknown"}, wantCode: 64, wantStderr: "引数が正しくありません"},
 		{name: "使い方の余分な引数", args: []string{"--help", "extra"}, wantCode: 64, wantStderr: "引数が正しくありません"},
 		{name: "版番号の余分な引数", args: []string{"--version", "extra"}, wantCode: 64, wantStderr: "引数が正しくありません"},
-		{name: "未実装の検査", args: []string{"scan"}, wantCode: 2, wantStderr: "未実装"},
-		{name: "対象指定時も検査成功にしない", args: []string{"scan", "--rules", "存在しない指示.md"}, wantCode: 2, wantStderr: "未実装"},
-		{name: "未実装のJSON出力", args: []string{"scan", "--command", "go", "--json"}, wantCode: 2, wantStderr: "未実装"},
+		{name: "対象なし", args: []string{"scan"}, wantCode: 64, wantStderr: "引数が正しくありません"},
+		{name: "対象指定時も検査成功にしない", args: []string{"scan", "--rules", "存在しない指示.md"}, wantCode: 2, wantStdout: "検査未完了"},
 	}
 
 	for _, tt := range tests {

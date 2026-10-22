@@ -1,0 +1,158 @@
+// Package report は検査結果の分類、安定した並び順と終了コードを定める。
+package report
+
+import (
+	"cmp"
+	"slices"
+	"strings"
+
+	"rulecheck/internal/version"
+)
+
+// SchemaVersion はJSON形式の版番号の正本。CLIの版とは独立して管理する。
+const SchemaVersion = 1
+
+type Category string
+
+const (
+	Error   Category = "error"
+	Warning Category = "warning"
+	Unknown Category = "unknown"
+	Skipped Category = "skipped"
+)
+
+const (
+	NotRequested   = "not_requested"
+	NotImplemented = "not_implemented"
+	NotRun         = "not_run"
+)
+
+type Tool struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+type Coverage struct {
+	Rules      string `json:"rules"`
+	References string `json:"references"`
+	Skills     string `json:"skills"`
+	Commands   string `json:"commands"`
+}
+
+type Finding struct {
+	Code     string   `json:"code"`
+	Category Category `json:"category"`
+	Message  string   `json:"message"`
+	Source   string   `json:"source"`
+	Line     int      `json:"line,omitempty"`
+	Paths    []string `json:"paths"`
+}
+
+type Result struct {
+	Kind     string    `json:"kind"`
+	Target   string    `json:"target"`
+	Findings []Finding `json:"findings"`
+}
+
+type Counts struct {
+	Error   int `json:"error"`
+	Warning int `json:"warning"`
+	Unknown int `json:"unknown"`
+	Skipped int `json:"skipped"`
+}
+
+type Report struct {
+	SchemaVersion int      `json:"schema_version"`
+	Tool          Tool     `json:"tool"`
+	Command       string   `json:"command"`
+	Status        string   `json:"status"`
+	Coverage      Coverage `json:"coverage"`
+	Results       []Result `json:"results"`
+	Counts        Counts   `json:"counts"`
+}
+
+// New は結果と関係するパスを並べ替え、分類別件数から状態を決定する。
+func New(coverage Coverage, results []Result) Report {
+	if results == nil {
+		results = []Result{}
+	}
+	r := Report{
+		SchemaVersion: SchemaVersion,
+		Tool:          Tool{Name: "rulecheck", Version: version.Current},
+		Command:       "scan", Coverage: coverage, Results: results,
+	}
+	for i := range r.Results {
+		result := &r.Results[i]
+		if result.Findings == nil {
+			result.Findings = []Finding{}
+		}
+		for j := range result.Findings {
+			finding := &result.Findings[j]
+			if finding.Paths == nil {
+				finding.Paths = []string{}
+			}
+			slices.Sort(finding.Paths)
+			switch finding.Category {
+			case Error:
+				r.Counts.Error++
+			case Warning:
+				r.Counts.Warning++
+			case Unknown:
+				r.Counts.Unknown++
+			case Skipped:
+				r.Counts.Skipped++
+			}
+		}
+		slices.SortFunc(result.Findings, compareFindings)
+	}
+	slices.SortFunc(r.Results, func(a, b Result) int {
+		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Target, b.Target))
+	})
+	switch {
+	case r.Counts.Unknown > 0:
+		r.Status = "incomplete"
+	case r.Counts.Error > 0:
+		r.Status = "failed"
+	case r.Counts.Warning > 0:
+		r.Status = "warning"
+	default:
+		r.Status = "passed"
+	}
+	return r
+}
+
+func compareFindings(a, b Finding) int {
+	return cmp.Or(
+		cmp.Compare(a.Source, b.Source), cmp.Compare(a.Line, b.Line),
+		cmp.Compare(a.Code, b.Code), cmp.Compare(a.Category, b.Category),
+		cmp.Compare(a.Message, b.Message),
+		cmp.Compare(strings.Join(a.Paths, "\x00"), strings.Join(b.Paths, "\x00")),
+	)
+}
+
+func InvalidArguments() Report {
+	r := New(Coverage{Rules: NotRun, References: NotRun, Skills: NotRun, Commands: NotRun}, []Result{{
+		Kind: "arguments",
+		Findings: []Finding{{
+			Code: "invalid_arguments", Category: Error,
+			Message: "引数が正しくありません。rulecheck --help で使い方を確認してください。",
+		}},
+	}})
+	r.Status = "invalid_arguments"
+	return r
+}
+
+func (r Report) ExitCode() int {
+	switch r.Status {
+	case "invalid_arguments":
+		return 64
+	case "incomplete":
+		return 2
+	case "failed":
+		return 1
+	case "passed", "warning":
+		return 0
+	default:
+		return 2
+	}
+}

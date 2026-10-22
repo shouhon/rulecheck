@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"rulecheck/internal/report"
 	"rulecheck/internal/version"
 )
 
@@ -24,7 +25,7 @@ const help = `rulecheck は、明示された指示ファイル・スキル・CL
 検査範囲:
   明示した対象だけを読み取り、ファイルや設定の変更、外部URLへの接続は行いません。
 
-現在は初期設定段階です。scan の引数処理・検査・JSON出力は未実装で、終了コード2を返します。
+現在は検査本体が未実装です。指定した対象は判定不能として報告し、終了コード2を返します。
 `
 
 // Run は処理結果の終了コードを返す。プロセスの終了は呼び出し元が行う。
@@ -52,9 +53,16 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprint(stdout, help)
 			return 0
 		}
-		// 未実装の検査を、検査完了や引数検証済みとして扱わない。
-		fmt.Fprintln(stderr, "検査機能は未実装です。開発計画は docs/development-plan.md を参照してください。")
-		return 2
+		options, valid := parseScan(args[1:])
+		if !valid {
+			invalidArguments(stderr)
+			if options.json {
+				writeReport(report.InvalidArguments(), true, stdout, stderr)
+			}
+			return 64
+		}
+		result := pendingReport(options)
+		return writeReport(result, options.json, stdout, stderr)
 	default:
 		return invalidArguments(stderr)
 	}
