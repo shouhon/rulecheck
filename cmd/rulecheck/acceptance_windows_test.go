@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -91,6 +92,65 @@ func TestExecutableAcceptance(t *testing.T) {
 			requireFinding(t, r, tc.finding)
 		}
 		f.check(t, []string{"--rules", broken, "--rules", alias}, "incomplete", 2, report.Counts{Error: 1, Unknown: 1})
+	})
+
+	t.Run("未対応の再解析ポイントを判定不能にする", func(t *testing.T) {
+		f := newFixture(t, binary)
+		for _, path := range []string{f.path("特殊.md"), f.path("tools", "unsupported.cmd"), f.path("skills", "file", "SKILL.md")} {
+			writeFile(t, path, secret)
+			makeUnsupportedReparsePoint(t, path)
+		}
+		for _, path := range []string{f.path("特殊ディレクトリ"), f.path("skills", "directory")} {
+			if err := os.MkdirAll(path, 0700); err != nil {
+				t.Fatal(err)
+			}
+			makeUnsupportedReparsePoint(t, path)
+		}
+		writeFile(t, f.path("AGENTS.md"), "[ファイル](特殊.md)\n[ディレクトリ](特殊ディレクトリ)\n[その中](特殊ディレクトリ/AGENTS.md)\n")
+		makeSymlink(t, "特殊.md", f.path("別名.md"))
+		watchFixture(t, f.root)
+		for _, tc := range []struct {
+			name, kind, finding string
+			args                []string
+			unknown             int
+			coverage            report.Coverage
+		}{
+			{"指定ファイル", "rules", "path_unreadable", []string{"--rules=特殊.md"}, 1,
+				report.Coverage{Rules: report.Partial, References: report.Partial, Skills: report.NotRequested, Commands: report.NotRequested}},
+			{"共有リンクの参照先", "rules", "path_unreadable", []string{"--rules=別名.md"}, 1,
+				report.Coverage{Rules: report.Partial, References: report.Partial, Skills: report.NotRequested, Commands: report.NotRequested}},
+			{"途中のディレクトリ", "rules", "path_unreadable", []string{"--rules=特殊ディレクトリ/AGENTS.md"}, 1,
+				report.Coverage{Rules: report.Partial, References: report.Partial, Skills: report.NotRequested, Commands: report.NotRequested}},
+			{"スキルの親", "skills", "path_unreadable", []string{"--skills=特殊ディレクトリ"}, 1,
+				report.Coverage{Rules: report.NotRequested, References: report.Partial, Skills: report.Partial, Commands: report.NotRequested}},
+			{"直下のスキル候補", "skill", "path_unreadable", []string{"--skills=skills"}, 2,
+				report.Coverage{Rules: report.NotRequested, References: report.Partial, Skills: report.Partial, Commands: report.NotRequested}},
+			{"本文の参照", "rules", "reference_unreadable", []string{"--rules=AGENTS.md"}, 3,
+				report.Coverage{Rules: report.Completed, References: report.Partial, Skills: report.NotRequested, Commands: report.NotRequested}},
+			{"CLI候補", "command", "command_unresolved", []string{"--command=unsupported"}, 1,
+				report.Coverage{Rules: report.NotRequested, References: report.NotRequested, Skills: report.NotRequested, Commands: report.Partial}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				r, _ := f.check(t, tc.args, "incomplete", 2, report.Counts{Unknown: tc.unknown})
+				if r.Coverage != tc.coverage {
+					t.Fatal("未対応の再解析ポイントが検査範囲に反映されていません")
+				}
+				findings := 0
+				for _, result := range resultOf(t, r, tc.kind) {
+					if tc.finding != "reference_unreadable" && result.ResolvedPath != "" {
+						t.Fatal("未対応の再解析ポイントを実体へ解決したと誤認しています")
+					}
+					for _, finding := range result.Findings {
+						if finding.Code == tc.finding && finding.Category == report.Unknown {
+							findings++
+						}
+					}
+				}
+				if findings != tc.unknown {
+					t.Fatal("未対応の再解析ポイントを成功や不存在と誤認しています")
+				}
+			})
+		}
 	})
 
 	t.Run("コードと外部参照と本文の指示を実行しない", func(t *testing.T) {
@@ -388,12 +448,76 @@ func lockFile(t *testing.T, path string) {
 	})
 }
 
+// makeUnsupportedReparsePoint はドライバーの導入なしに模擬タグとGUIDを設定する。
+func makeUnsupportedReparsePoint(t *testing.T, path string) {
+	t.Helper()
+	name, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := syscall.CreateFile(name, syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_OPEN_REPARSE_POINT|syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := make([]byte, 24+len(secret))
+	binary.LittleEndian.PutUint32(data[:4], 0x00000042)
+	binary.LittleEndian.PutUint16(data[4:6], uint16(len(secret)))
+	copy(data[8:24], "rulecheck-test-01")
+	copy(data[24:], secret)
+	var returned uint32
+	err = syscall.DeviceIoControl(handle, 0x000900a4, &data[0], uint32(len(data)), nil, 0, &returned, nil) // FSCTL_SET_REPARSE_POINT
+	closeErr := syscall.CloseHandle(handle)
+	if err != nil {
+		if errors.Is(err, syscall.ERROR_ACCESS_DENIED) || errors.Is(err, syscall.ERROR_PRIVILEGE_NOT_HELD) || errors.Is(err, syscall.Errno(50)) || errors.Is(err, syscall.Errno(1)) {
+			t.Skipf("再解析ポイントを作成できないため、この受入条件は未確認: %v", err)
+		}
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		handle, err := syscall.CreateFile(name, syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_OPEN_REPARSE_POINT|syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer syscall.CloseHandle(handle)
+		binary.LittleEndian.PutUint16(data[4:6], 0)
+		if err := syscall.DeviceIoControl(handle, 0x000900ac, &data[0], 24, nil, 0, &returned, nil); err != nil { // FSCTL_DELETE_REPARSE_POINT
+			t.Error(err)
+		}
+	})
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	actual, err := reparseData(path)
+	if err != nil || !bytes.Equal(actual, data) {
+		t.Fatal("模擬の再解析データを読み戻せません")
+	}
+}
+
+func reparseData(path string) ([]byte, error) {
+	name, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	handle, err := syscall.CreateFile(name, 0, syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE|syscall.FILE_SHARE_DELETE, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_OPEN_REPARSE_POINT|syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer syscall.CloseHandle(handle)
+	data := make([]byte, syscall.MAXIMUM_REPARSE_DATA_BUFFER_SIZE)
+	var returned uint32
+	if err := syscall.DeviceIoControl(handle, syscall.FSCTL_GET_REPARSE_POINT, nil, 0, &data[0], uint32(len(data)), &returned, nil); err != nil {
+		return nil, err
+	}
+	return data[:returned], nil
+}
+
 type fileState struct {
 	Mode       fs.FileMode
 	Modified   int64
 	Attributes uint32
 	Hash       [sha256.Size]byte
-	Link       string
+	Reparse    [sha256.Size]byte
 }
 
 func snapshot(t *testing.T, root string) map[string]fileState {
@@ -408,20 +532,24 @@ func snapshot(t *testing.T, root string) map[string]fileState {
 			return err
 		}
 		state := fileState{Mode: info.Mode(), Modified: info.ModTime().UnixNano(), Attributes: info.Sys().(*syscall.Win32FileAttributeData).FileAttributes}
-		if info.Mode().IsRegular() {
+		if state.Attributes&syscall.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+			data, err := reparseData(path)
+			if err != nil {
+				return err
+			}
+			state.Reparse = sha256.Sum256(data)
+		} else if info.Mode().IsRegular() {
 			body, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
 			state.Hash = sha256.Sum256(body)
-		} else if info.Mode()&fs.ModeSymlink != 0 {
-			state.Link, err = os.Readlink(path)
-			if err != nil {
-				return err
-			}
 		}
 		name, err := filepath.Rel(root, path)
 		states[name] = state
+		if err == nil && entry.IsDir() && state.Attributes&syscall.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+			return fs.SkipDir
+		}
 		return err
 	})
 	if err != nil {
@@ -436,6 +564,9 @@ func watchFixture(t *testing.T, root string) {
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || !entry.IsDir() {
 			return err
+		}
+		if entry.Type()&fs.ModeIrregular != 0 {
+			return fs.SkipDir
 		}
 		fixed := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 		return os.Chtimes(path, fixed, fixed)

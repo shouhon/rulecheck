@@ -3,7 +3,6 @@ package scan
 
 import (
 	"bytes"
-	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -199,7 +198,7 @@ func (s *scanner) skills(root *target) {
 		}
 		file := filepath.Join(dir.path, "SKILL.md")
 		checked, err := resolve(file)
-		if errors.Is(err, fs.ErrNotExist) && len(checked.links) == 0 {
+		if err != nil && pathFinding(err).Code == "path_missing" && len(checked.links) == 0 {
 			// 補助ディレクトリや入れ子のスキルは対象にしない。
 			continue
 		}
