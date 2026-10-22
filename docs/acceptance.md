@@ -4,7 +4,7 @@
 
 [要件定義書7節](requirements.md#7-受入条件)と、実行ファイルを使った確認の対応を記録します。検査範囲の正本は要件定義書です。
 
-対象は基準コミット`da88587`に、観測前に準備した実行ファイルを使う受入確認と、その手順を追加した状態です。CLI版は`0.1.1`、JSON形式は`1`です。今回はテストと開発文書だけを変更しています。全体の受入判定は、後述の通信監視が未完了のため保留します。
+今回の対象は基準コミット`ee189cf`に、観測用の実行スクリプト、その事前確認テストと手順の変更を加えた状態です。CLI版は`0.1.1`、JSON形式は`1`です。製品本体は変更していません。基本9項目と割当ドライブ26項目、同じ試験の製品操作と数値IPの通信照合に基づき、今回の受入ケースで要件を満たしたと判定し、M4を完了しました。[最終判定と限界](#数値ipでの照合と最終判定)を参照してください。過去の採取結果は当時の対象に対する証拠として保持し、今回の確認とは分けます。
 
 ## 再実行
 
@@ -40,6 +40,8 @@ finally {
 各ドライブについて、ルート・子パス・スラッシュ区切り・拡張長パスを`--rules`と`--skills`へ指定します。通常・参照形式・画像の本文の参照、直接の`PATH`、UNCの試験と共通の共有リンク7経路も確認します。1ドライブ当たり13項目で、JSON・通常表示・終了コード2とローカルの模擬データの前後一致を検査します。
 
 模擬ファイル・共有リンク・実行ファイルはすべてローカルの一時ディレクトリに作ります。共有側の子パスは名前を組み立てるだけで、試験側から作成・存在確認・列挙は行いません。リンクも種類を明示して作り、作成時に共有先の属性を調べません。共有内の既存ファイルは検査用データにせず、前後比較のためにも読みません。この試験は拒否の結果を確認するもので、共有へのアクセスや通信がなかったことの実測は別途必要です。
+
+割当先が無アクセス時にスリープする場合も、維持のための定期アクセスや共有内の存在確認は行いません。保存済みの証拠で確認できる場合は再試験せず、再試験が必要なときだけドライブ種別の事前確認から始めます。
 
 管理者への昇格やサンドボックスによって、通常の利用者が割り当てたドライブが見えなくなる場合があります。試験のために再割当や資格情報の変更は行わず、割当が見える通常の環境から実行してください。今回もサンドボックス内では種別`1`、サンドボックス外の非管理者環境ではY:・Z:とも種別`4`でした。
 
@@ -77,7 +79,7 @@ finally {
 
 主担当が別の観点から実装も確認しました。参照先とCLI候補はパス解決と種類の確認だけを使い、本文は明示した指示ファイルと直下のスキルでだけ読みます。リンク先もローカル専用の判定を通し、外部URIはファイルを開く前に対象外へ分けます。本体の依存パッケージ一覧に`net`・`net/http`・`os/exec`は含まれず、`net/url`・`net/netip`は含まれます。この確認は独立した評価ではありません。
 
-接続検知器で観測するのは指定した接続先だけです。UNC・ネットワークリンク・割当ドライブの拒否確認と、この実測を合わせても、全通信がないと実測したことにはなりません。エージェントの実行環境は非管理者で、`pktmon status`もアクセス拒否となりました。[ETWセッションの制御に必要な権限](https://learn.microsoft.com/en-us/windows/win32/etw/controlling-event-tracing-sessions)を使う採取は利用者が実行し、後述の観測結果を得ました。同一試験での照合が未完了のため、M4の未確認事項として残します。模擬タグでの確認を、すべての製品固有の再解析ポイントの検証とは扱いません。
+接続検知器で観測するのは指定した接続先だけです。UNC・ネットワークリンク・割当ドライブの拒否確認と、この実測を合わせても、全通信がないと実測したことにはなりません。エージェントの実行環境は非管理者で、`pktmon status`もアクセス拒否となりました。[ETWセッションの制御に必要な権限](https://learn.microsoft.com/en-us/windows/win32/etw/controlling-event-tracing-sessions)を使う採取は利用者が実行し、後述の同一試験の原本との照合を終えました。確認範囲と限界は最終判定へ記録します。模擬タグでの確認を、すべての製品固有の再解析ポイントの検証とは扱いません。
 
 ## 通信観測前の準備
 
@@ -95,19 +97,36 @@ Get-FileHash -LiteralPath (Join-Path $rulecheckObserveDir 'rulecheck.exe'), (Joi
 $rulecheckObserveDir
 ```
 
-`hashes.json`は観測対象とテスト本体の照合用です。再開する場合は、表示された絶対パスを`$rulecheckObserveDir`へ設定します。下記のテストはスキップも失敗として扱います。権限不足で共有リンク等を作れなければ、通常の利用者環境で必要な権限を整えて再実行してください。
+`hashes.json`は観測対象とテスト本体の照合用です。実行ファイル2つと同じ場所に保持します。保存先を移動した場合も準備をやり直します。再開する場合は、表示された絶対パスを`$rulecheckObserveDir`へ設定します。
+
+割当が見える通常のPowerShellで、採取前に次を実行します。Y:・Z:は実際の割当ドライブ名へ置き換えます。共有内の存在確認や列挙はせず、ルートの種別だけを問い合わせます。
+
+```powershell
+pwsh -NoProfile -File ./scripts/run-observation.ps1 -ObservationDirectory $rulecheckObserveDir -NetworkDrives 'Y:;Z:' -CheckOnly
+if ($LASTEXITCODE -ne 0) { throw '事前確認に失敗しました。採取を始めないでください。' }
+```
+
+[run-observation.ps1](../scripts/run-observation.ps1)は実行前後のSHA-256を照合し、指定ドライブが見えなければ受入試験の前に停止します。`-CheckOnly`は試験やログ作成を行いません。本実行では固有の`run-...`ディレクトリへ`acceptance.log`と、UTCの開始終了時刻・終了コード・指定ドライブ・SHA-256を含む`run.json`を保存します。選択した試験の成功記録がない場合や、1項目でもスキップがあれば失敗とし、呼出し元の環境変数は復元します。権限不足のコマンドはエージェントから再試行せず、利用者が適切なPowerShellで実行します。
+
+`-NetworkDrives`を省いた場合は基本の受入試験だけを実行し、割当ドライブの実機確認は未確認として残します。管理者権限や割当が不要な手元での動作確認に使えますが、M4の完成条件を満たしたとは扱いません。スクリプトは通信採取器を起動・停止せず、外部の検証先への通信も生成しません。
 
 ## 通信観測の手順
 
 今回の目的には、Windows標準の[pktmon](https://learn.microsoft.com/en-us/windows-server/networking/technologies/pktmon/pktmon)でパケットを採取し、[Process Monitor](https://learn.microsoft.com/en-us/sysinternals/downloads/procmon)で`rulecheck.exe`のファイル操作を確認する組合せを使います。どちらもこの環境に存在します。Wiresharkは採取した通信を詳しく解析するときに追加できます。pktmonはpcapngへ変換でき、[保存済みの採取ファイルの閲覧にはNpcapは不要](https://www.wireshark.org/docs/wsug_html_chunked/ChBuildInstallWinInstall.html)です。今回、追加の導入やドライバーの起動は行っていません。
 
-1. 通常のPowerShellで上記の準備を終え、ビルド・依存取得と観測区間を分けます。割当ドライブがこの環境から見えることも、上記試験で先に確認します。
+1. 通常のPowerShellで上記の準備と`-CheckOnly`を終え、ビルド・依存取得と観測区間を分けます。割当ドライブがこの環境から見えることも先に確認します。
 2. 別の管理者PowerShellで`pktmon status`と`pktmon filter list`を確認します。既存の採取やフィルターがあれば勝手に停止・削除せず、観測条件を調整します。全接続先を確認する試験では、DNSやSMBのポートだけに採取を限定しません。
-3. Process Monitorは試験前から起動し、`Process Name is rulecheck.exe`と`Process Name is rulecheck-tests.exe`の包含フィルターを設定します。ファイル操作とネットワーク操作の両方を表示し、テスト本体の接続検知器によるTCP通信も記録して、ネットワーク操作の採取が有効だったことを確認します。既存の採取設定は別に保持し、ログの保存先はローカルのGit管理外とします。pktmonも既存セッションがなくフィルターもない状態で、下記の採取を開始します。64バイトの採取にも通信内容が含まれる場合があるため、生ログをコミットしません。
+3. 管理者PowerShellで、下記の保存先を作成します。Process Monitorの既存の採取設定は別に保持します。採取前に`Filter > Drop Filtered Events`を無効にし、`File > Backing Files`の`Use file named`へ、この保存先の`process.pml`を指定します。全プロセスのファイル・ネットワーク・プロセス操作を採取し、表示で製品だけに絞った場合も、除外したイベントを破棄しない設定にします。テスト本体のTCP通信を動作確認として記録します。[公式説明](https://learn.microsoft.com/en-us/sysinternals/downloads/procmon)にある非破壊的なフィルターと、すべての情報を保持するPML形式を使い、他プロセスの記録も後から確認できるようにします。
 
 ```powershell
 $rulecheckTraceDir = Join-Path (Get-Location) ('.cache/network-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $rulecheckTraceDir | Out-Null
+$rulecheckTraceDir
+```
+
+Process Monitorの採取開始後、pktmonも既存セッションがなくフィルターもないことを確認して、同じ管理者PowerShellで次を実行します。64バイトの採取にも通信内容が含まれる場合があるため、生ログをコミットしません。
+
+```powershell
 pktmon start --capture --pkt-size 64 --log-mode multi-file --file-size 64 --file-name (Join-Path $rulecheckTraceDir 'packets.etl')
 if ($LASTEXITCODE -ne 0) { throw '通信の採取を開始できませんでした。' }
 ```
@@ -116,30 +135,14 @@ if ($LASTEXITCODE -ne 0) { throw '通信の採取を開始できませんでし�
 5. 元の通常のPowerShellで下記を実行します。Y:・Z:は、実際の割当ドライブ名に合わせます。準備済みのテストを直接起動し、各子プロセスのPID・UTCの開始終了時刻・終了コードをログに残します。引数や本文は観測区間のログに転載しません。テスト側の接続検知器と模擬CLIの動作確認を製品の動作へ数えず、記録した`rulecheck.exe`の区間を判定対象にします。
 
 ```powershell
-$rulecheckPreviousBinary = $env:RULECHECK_TEST_BINARY
-$rulecheckPreviousDrives = $env:RULECHECK_TEST_NETWORK_DRIVES
-$rulecheckPreviousTrace = $env:RULECHECK_TEST_TRACE_PROCESSES
-try {
-    $env:RULECHECK_TEST_BINARY = Join-Path $rulecheckObserveDir 'rulecheck.exe'
-    $env:RULECHECK_TEST_NETWORK_DRIVES = 'Y:;Z:'
-    $env:RULECHECK_TEST_TRACE_PROCESSES = '1'
-    & (Join-Path $rulecheckObserveDir 'rulecheck-tests.exe') '-test.v' '-test.run=^TestExecutable(Acceptance|MappedDrives)$' *> (Join-Path $rulecheckObserveDir 'acceptance.log')
-    if ($LASTEXITCODE -ne 0) { throw '受入確認に失敗しました。採取も停止してください。' }
-    if (Select-String -LiteralPath (Join-Path $rulecheckObserveDir 'acceptance.log') -Pattern '^\s*--- SKIP:') {
-        throw '未確認の受入条件があります。ログを確認し、採取も停止してください。'
-    }
-}
-finally {
-    $env:RULECHECK_TEST_BINARY = $rulecheckPreviousBinary
-    $env:RULECHECK_TEST_NETWORK_DRIVES = $rulecheckPreviousDrives
-    $env:RULECHECK_TEST_TRACE_PROCESSES = $rulecheckPreviousTrace
-}
+pwsh -NoProfile -File ./scripts/run-observation.ps1 -ObservationDirectory $rulecheckObserveDir -NetworkDrives 'Y:;Z:'
+if ($LASTEXITCODE -ne 0) { throw '受入確認に失敗しました。両方の採取を停止し、保存されたログを確認してください。' }
 ```
 
-6. 試験が失敗した場合も、採取を開始した管理者PowerShellで`pktmon stop`を実行します。実行ファイル2つのSHA-256が`hashes.json`と一致すること、受入ログの対象SHA-256が準備した`rulecheck.exe`と一致することを確認します。PIDと区間、採取の前後の動作確認、採取範囲、欠落の有無も記録します。解析用の変換は`pktmon etl2txt <ETLのパス>`または`pktmon etl2pcap <ETLのパス>`です。複数ファイルができた場合は全区間を確認します。
+6. 試験が失敗した場合も、採取を開始した管理者PowerShellで`pktmon stop`を実行し、Process Monitorの採取も停止します。Process Monitorの`File > Save`では`All events`を選び、PML原本を保持したうえで、全イベントをCSVへ保存します。パケットの数値IPと比較するCSVは、`Options > Resolve Network Addresses`をオフにし、`process-all-numeric.csv`として保存します。名前表示で保存したCSVも上書きせず保持します。製品だけのCSVへ絞るのは、この原本と全イベントCSVを保存した後にします。実行ファイル2つのSHA-256が`hashes.json`と一致すること、受入ログの対象SHA-256が準備した`rulecheck.exe`と一致することを確認します。PIDと区間、採取の前後の動作確認、採取範囲、欠落の有無も記録します。解析用の変換は`pktmon etl2txt <ETLのパス>`または`pktmon etl2pcap <ETLのパス>`です。複数ファイルができた場合は全区間を確認します。
 7. Process Monitorでは記録したPIDでファイル操作を絞り、Y:・Z:やUNCへの要求がないことを調べます。パケットをPIDだけで判断するとWindows経由の間接的な通信を見落とすため、同じ区間のDNS・SMB・他の通信も採取全体から照合します。常駐処理の通信などと区別できない場合は判定不能にします。
 
-コマンドの引数は実機の`pktmon start help`・`pktmon etl2pcap help`と[公式の構文説明](https://learn.microsoft.com/en-us/windows-server/networking/technologies/pktmon/pktmon-syntax)で確認しています。パケットが見つからないだけでは合格にせず、前後の動作確認と採取範囲・欠落の評価を含めてM4を判定します。pktmonとProcess Monitorは同じ試験を採取し、テスト終了後に両方を停止してからCSVを保存します。再実行した試験に、前回の採取結果を組み合わせません。
+コマンドの引数は実機の`pktmon start help`・`pktmon etl2pcap help`と[公式の構文説明](https://learn.microsoft.com/en-us/windows-server/networking/technologies/pktmon/pktmon-syntax)で確認しています。パケットが見つからないだけでは合格にせず、前後の動作確認と採取範囲・欠落の評価を含めてM4を判定します。pktmonとProcess Monitorは同じ試験を採取し、テスト終了後に両方を停止してからCSVを保存します。再実行した試験に、前回の採取結果を組み合わせません。試験ログ・`run.json`・SHA-256と、同じ試験のETL全ファイル・PML原本・全イベントCSVをまとめて保持します。原本は個人情報や他プロセスの内容を含む可能性があるため、利用者のローカルに保持し、公開や外部送信は行いません。
 
 ## 利用者による観測と照合結果
 
@@ -172,9 +175,9 @@ CSVのSHA-256は`88b0458ebeaf084de695488e78a2ce16a1eae979c9873e48f60142a90b82ab3
 
 `pktmon etl2txt`には採取先頭の`0x490`が2件あります。別の集計で、パケットイベント160・170の合計91,565件と変換後のパケット記録が一致し、製品区間内に書式変換エラーはありませんでした。欠落0件は[tracerpt](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/tracerpt)の集計によるもので、書式変換の成功とは区別しています。
 
-製品区間には背景のTCP・UDP等の通信も重なっています。製品自身のネットワーク操作が0件であることは確認できましたが、間接的な通信との切り分けには、同じProcess Monitorで採取された他プロセスの記録が必要です。追加保存を依頼したところ、利用者から元の採取データは残っていないと回答がありました。現在の証拠だけでは背景通信の帰属を確定できないため、M4は進行中とします。再観測する際は、全イベントをファイルへ保存する設定を採取前に確定し、停止後にも原本を残します。
+製品区間には背景のTCP・UDP等の通信も重なっています。製品自身のネットワーク操作が0件であることは確認できましたが、間接的な通信との切り分けには、同じProcess Monitorで採取された他プロセスの記録が必要でした。追加保存を依頼したところ、利用者から元の採取データは残っていないと回答がありました。この時点では判定を保留し、次の採取で全イベントの原本を保持する手順へ変更しました。後述の今回の採取で照合を終えています。
 
-## 確認結果
+## 以前の対象での確認結果
 
 Windows/amd64・Go 1.27.3で、固定済みモジュールのキャッシュを使い、`GOPROXY=off`・`GOTOOLCHAIN=local`を指定して確認しました。`GOCACHE`はGit管理外の`.cache/go-build`、`GOMODCACHE`は既存の`.cache/go-mod`を使いました。新たな取得や依存の版変更は行っていません。
 
@@ -191,3 +194,66 @@ Windows/amd64・Go 1.27.3で、固定済みモジュールのキャッシュを�
 前回は読み取り専用の補助担当が、UNC等のネットワーク対象の追加試験と依存検査、関連する検査本体の経路を静的に独立確認し、指摘はありませんでした。今回は別の読み取り専用の補助担当が、準備済み実行ファイルを指定する分岐、既存の受入条件、観測時のGoコマンドの非起動と手順を静的に独立確認し、指摘はありませんでした。実行検証は主担当が行いました。通信の不存在を実測していないという限界は変わりません。
 
 前回は検査本体の不具合修正としてCLI版を`0.1.0`から`0.1.1`へ更新しました。今回はテストと開発文書だけの変更のため、READMEの版管理規則に従い`0.1.1`を据え置きます。JSON形式も`1`を維持しました。
+
+## 今回の実行手順の確認
+
+基準コミット`ee189cf`に今回の変更を加えた状態で、Windows/amd64・Go 1.27.3・PowerShell 7を使って確認しました。固定済みの`.cache/go-mod`と`.cache/go-build`を使い、`GOPROXY=off`・`GOTOOLCHAIN=local`で新たな依存の取得を行っていません。
+
+必須検証の`pwsh -NoProfile -File ./scripts/check.ps1`は成功しました。追加した`TestObservationPreflight`の6項目では、実行できない模擬成果物を使い、事前確認で起動しないこと、改変・ハッシュの重複・別の準備先の混入・不正なドライブ指定・割当が見えない環境を、試験やログ作成の前に拒否することを確認しました。
+
+準備済みテストを実際にランナーから起動する確認では、Goを検索できない`PATH`でも基本9項目が成功し、スキップは0件、製品71プロセスのPID・UTCの区間が記録されました。同じ条件で再実行し、異なる`run-...`ディレクトリへ保存されることと、呼出し元の環境変数が復元されることも確認しました。管理者権限での採取は行っていません。
+
+| 成果物 | SHA-256 |
+| --- | --- |
+| `rulecheck.exe` | `b8840007a4344a7addaaefeff4b2cc39936cede8574e4158f603aed4ed4da78a` |
+| `rulecheck-tests.exe` | `db0a62468a873c543a4f122602c10e2b03fc664882a81ae869f354a0014c6807` |
+
+準備先はGit管理外の`.cache/observation-20261022-runner/`です。`hashes.json`と2回分の試験ログ・`run.json`を保持し、製品のSHA-256は必須検証の`bin/rulecheck.exe`とも一致しました。今回のエージェント環境ではY:・Z:の種別が`NoRootDirectory`で、割当指定時は事前確認で停止しました。その後の利用者の通常のPowerShellでの割当確認と、同一試験の採取結果は次節へ記録します。
+
+読み取り専用の補助担当は、追加スクリプト・事前確認テスト・既存のバイナリ指定とPID記録を静的に独立確認し、指摘はありませんでした。実行検証と、その後に更新した文書との照合は主担当が行いました。Process Monitorとpktmonの公式説明で原本保存と採取方式を再確認し、採取操作は利用者が行いました。
+
+製品の動作・出力・配布内容を変えない開発用スクリプト・テスト・文書の変更のため、CLI版は`0.1.1`から`0.1.1`へ据え置き、正本と実行ファイルの表示の一致を確認しました。JSON形式も`1`のままです。
+
+## 原本を保持した今回の採取
+
+2026年10月22日、利用者が`capture-01`へ保存したPML原本・全イベントCSV・ETL全ファイルと、`run-ed977975ad94489aa0db3dfc9be7e3e7`の受入ログを照合しました。製品とテスト本体は、直前の表のSHA-256と一致しています。試験全体は日本時間22:10:51.5470745〜22:10:54.0053091です。個々のGoログの起動区間だけでなく、`run.json`の試験全体を通信照合の対象とします。
+
+| 証拠 | 確認結果 |
+| --- | --- |
+| 受入ログ・`run.json` | 基本9項目と割当26項目（Y:・Z:各13項目）、計35項目が成功。スキップ0件、終了コード0 |
+| 全イベントCSV | 22:08:35.2769639〜22:11:29.1072155の2,710,815件。製品34,837件、テスト本体31,241件、その他2,644,737件。製品140起動を開始・終了イベントと照合し、親PIDと終了コードも全件一致。PID再利用はない |
+| 製品の操作 | TCP・UDP、共有パスへのアクセス、通常ファイルの作成・書込・削除・改名、子プロセス作成の記録0件。`WriteFile`142件は名前付きパイプへの出力。`ReadFile`80件は明示した指示48件と直下スキル32件で、参照先本文・CLI候補・模擬個人設定・入れ子のスキルの読取は0件 |
+| ハンドル・再解析データ | `OpenIf`140件はローカルドライブへのハンドル取得で、すべて`Opened`、`Created`は0件。`FileSystemControl`102件はすべて`FSCTL_GET_REPARSE_POINT` |
+| 採取器の動作確認 | テスト本体のTCP14件はすべて成功。前後のpingはそれぞれ要求7件・応答7件を採取地点別に記録。件数には採取地点ごとの重複を含む |
+| ETL | 22:10:03.2816479〜22:11:16.7693376で試験と前後の動作確認を含む。全コンポーネント・フィルターなし。`tracerpt`の処理69,688イベント、欠落0件。通常分と破棄分を別々にpcapngへ変換した合計69,158件は、元のパケット記録の件数と一致 |
+
+Go側の終了時刻より後の後処理135件も、開始イベントとPIDを基準に含めて確認しました。最大の差は0.732msです。本文の読取80件は成功40件とEOF40件で、80ファイルを読んだという意味ではありません。読み取り専用の補助担当がCSVの対応と操作内容を独立確認し、主担当も原本の件数・時刻・SHA-256を照合しました。
+
+| 原本 | SHA-256 |
+| --- | --- |
+| `process-all.CSV` | `62a18378217d5760e14a5b42a3adf58557a316d451813b8df65697bf576e1bb1` |
+| `process-all-numeric.csv` | `459bf5112b196fe951eec8f782abb85b6eebe7864fedd35d9a3f6346e840a558` |
+| `process-all.PML` | `ef162ac3286a0e71337a0dacc4a5b259d0f58d2db4c875c6016b089dbfce5d37` |
+| `packets1.etl` | `17f751196716a84d3cfba40c2e014da5c7cab7653b23b8c22dffe0b765b3db9c` |
+| `packets2.etl` | `47f43a2347f73584be92d21bc8ccb9550b6207219df3f4dbcbf27f00c8ec9932` |
+
+原本と、集計・変換結果はGit管理外の`.cache/observation-20261022-runner/capture-01/`へ保持しています。原本のハッシュ計算の前後で、長さと更新日時が変わっていないことも確認しました。`pktmon etl2txt`には先頭時刻の`0x490`が5件ありますが、試験区間内にはなく、パケット記録の件数も一致しています。書式変換のエラーと、`tracerpt`で確認したイベント欠落0件を区別します。Windowsが破棄したパケットも採取できており、これは採取イベントの欠落とは別です。[pcapng変換の公式説明](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/pktmon-etl2pcap)に従い、既定では含まれない破棄分も別途変換しました。
+
+## 数値IPでの照合と最終判定
+
+利用者が同じ`process-all.PML`から名前解決を無効にして追加保存した`process-all-numeric.csv`を照合しました。2,710,815件の行順・時刻・PID・操作・結果・詳細は元のCSVと全件一致しました。2,696,710件は行全体が同じで、差分14,105件はTCP・UDPの`Path`列のアドレス表示だけです。両端ポートは全件同じで、すべての通信アドレスが数値IPになっています。製品の34,837件は行全体が同じでした。読み取り専用の補助担当も、このCSV間の一致を独立確認しました。
+
+| 試験全体のパケット記録 | 照合結果 |
+| --- | --- |
+| 通常TCP 3,856件 | プロトコル・数値IP・両端ポートが全件、CSVのテスト本体または他プロセスの通信と一致。対応するプロセスはテスト本体1つと背景9つの名前・PIDの組で、製品に対応する記録は0件。うち3,655件の通信経路は試験開始前からCSVに存在 |
+| UDP 8件 | ローカル端末以外からマルチキャスト宛てに受信した同一パケットの採取地点別7件と破棄1件。製品による送信を示す記録ではない |
+| ICMPv6 23件 | 種別130が7件、143が16件。[MLDの質問・報告](https://www.rfc-editor.org/rfc/rfc3810.html)に対応。種別だけで起点所有者を確定しない |
+| TCPと表示された破棄3件 | ループバックの受信側でTCPヘッダー長が不正な記録。採取全体にも同じ種類が33件あり、ポートやフラグを接続・所有者の根拠へ採用しない |
+
+件数には採取地点ごとの重複を含み、通信回数とは区別します。通常TCPの一致は通信経路の対応を示し、同じアドレス・ポートを使った個々のイベントの因果関係まで証明するものではありません。MLDと不正な破棄記録等の個別起点は未確定です。ETWヘッダーのPIDも処理時の文脈であり、起点所有者を直接証明しません。
+
+補助担当から、Goの起動区間だけでは途中と終了後を除外すること、候補の一意性と所有プロセスの一意性を区別すること、破棄記録のヘッダー解釈を採用しないことの指摘があり、`run.json`の試験全体での再集計と上記の判定へ反映しました。最終の読み取り専用確認では、要件6・7節、UNC・割当ドライブ・リンク先を開く前のローカル専用の境界、依存検査、通信の集計を確認し、今回の受入判定を妨げる不具合は見つかりませんでした。
+
+判定対象は要件6・7節が定める製品の動作です。基本9項目・割当26項目の成功、製品140起動の操作記録、数値IPの照合と実装の境界の確認により、今回の受入ケースで要件を満たしたと判定し、M4を完了します。要件・既存の受入条件・期待値は維持しています。Windows全体の背景通信の完全な起点特定、将来の全環境、製品固有のすべての再解析ポイントは、この観測による確認範囲の限界として残します。ネットワークドライブのスリープを考慮し、追加の共有先アクセスや再採取は行いません。
+
+今回も固定済みキャッシュと`GOPROXY=off`・`GOTOOLCHAIN=local`で必須検証が成功し、再ビルドした`bin/rulecheck.exe`のSHA-256が観測対象と一致しました。対象ソース35件のSHA-256はローカルの`analysis/source-hashes.json`へ保持しています。今回は確認結果と手順の文書更新で製品本体を変えていないため、CLI版は`0.1.1`から`0.1.1`へ据え置き、正本と実行ファイルの表示も一致しました。JSON形式は`1`のままです。
