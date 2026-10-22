@@ -41,7 +41,7 @@ func TestExecutableMappedDrives(t *testing.T) {
 		}
 	}
 
-	binary := buildAcceptanceBinary(t)
+	binary := acceptanceBinary(t)
 	for _, root := range roots {
 		t.Run(root[:2], func(t *testing.T) {
 			// 名前はローカルで生成するだけで、共有内に作成も存在確認もしない。

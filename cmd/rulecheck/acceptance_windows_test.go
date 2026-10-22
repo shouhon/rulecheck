@@ -29,7 +29,7 @@ const secret = "acceptance-secret-do-not-print"
 
 // TestExecutableAcceptance は模擬データだけを使い、プロセス境界で受入条件を確認する。
 func TestExecutableAcceptance(t *testing.T) {
-	binary := buildAcceptanceBinary(t)
+	binary := acceptanceBinary(t)
 
 	t.Run("正常な共有リンクと実体基準の参照", func(t *testing.T) {
 		f := newFixture(t, binary)
@@ -285,14 +285,20 @@ func TestExecutableAcceptance(t *testing.T) {
 	})
 }
 
-func buildAcceptanceBinary(t *testing.T) string {
+// acceptanceBinary は観測前に準備した実行ファイルがあればビルドを省く。
+func acceptanceBinary(t *testing.T) string {
 	t.Helper()
-	binary := filepath.Join(t.TempDir(), "rulecheck.exe")
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-trimpath", "-o", binary, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("受入確認用のビルドに失敗しました: %v\n%s", err, output)
+	binary := os.Getenv("RULECHECK_TEST_BINARY")
+	if binary == "" {
+		binary = filepath.Join(t.TempDir(), "rulecheck.exe")
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		build := exec.CommandContext(ctx, "go", "build", "-trimpath", "-o", binary, ".")
+		if output, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("受入確認用のビルドに失敗しました: %v\n%s", err, output)
+		}
+	} else if !filepath.IsAbs(binary) {
+		t.Fatal("RULECHECK_TEST_BINARYには準備済み実行ファイルの絶対パスを指定してください")
 	}
 	body, err := os.ReadFile(binary)
 	if err != nil {
