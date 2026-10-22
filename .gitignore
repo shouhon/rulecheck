@@ -1,0 +1,6 @@
+/bin/
+/.cache/
+/coverage.out
+/rulecheck
+/rulecheck.exe
+*.test
