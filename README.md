@@ -68,10 +68,15 @@ rulecheck scan --rules ./AGENTS.md --skills ./skills --command rg --command git
 rulecheck scan --rules ./AGENTS.md --json
 $LASTEXITCODE
 
+# 対象外の詳細を省き、種類別の件数だけを取得
+rulecheck scan --rules ./AGENTS.md --json --summary
+
 rulecheck --help
 ```
 
 `--rules`・`--skills`・`--command`は繰り返し指定でき、少なくとも1つの対象が必要です。空白を含むパスは引用符で囲んでください。`--skills`は指定した親ディレクトリの直下だけを調べます。JSONは標準出力へオブジェクト1件として出力します。
+
+`--summary`は通常表示とJSONの両方で使えます。対象外の診断を種類別の件数にまとめ、エラー・注意・判定不能の詳細は残します。対象外の詳細が必要な場合は`--summary`を外してください。
 
 | 終了コード | 意味 |
 | --- | --- |

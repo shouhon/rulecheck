@@ -66,13 +66,16 @@ JSON形式の版番号の正本は`internal/report/report.go`の`SchemaVersion`�
 | `status` | 分類別件数から決定する状態。不正引数の場合は`invalid_arguments` |
 | `coverage` | `rules`・`references`・`skills`・`commands`の検査範囲ごとの実施状況 |
 | `results` | 対象の`kind`・`target`、ファイル系の`aliases`・`resolved_path`・`links`、その対象の`findings` |
-| `counts` | 診断の分類別件数。対象数ではなく、`findings`の件数を集計 |
+| `counts` | 診断の分類別件数。対象数ではなく、要約前の`findings`の件数を集計 |
+| `skipped_summary` | `--summary`指定時だけ、対象外の診断を全対象を通じて`code`別に集計した`code`・`count`の配列。対象外が0件なら省略 |
 
 `coverage`は、指示ファイルと共有リンクを`rules`、Markdown参照を`references`、直下のスキルの列挙と基本項目を`skills`、CLI候補検索を`commands`で表します。未指定は`not_requested`、未実装は`not_implemented`、引数誤りで開始しなかった場合は`not_run`です。実施済みの検査は`completed`、一部だけ実施または判定不能がある検査は`partial`です。エラーを確定できた場合も、その項目の判定自体は実施済みです。指示ファイルかスキルが指定されると、Markdown参照の検査も必要とします。
 
 対象の`kind`は`rules`・`skills`・`skill`・`command`です。`skills`は指定した親、`skill`は直下で見つかった`SKILL.md`または解決に失敗した子リンクを表します。不正引数の結果に限り`arguments`とし、`target`を空文字列にします。ファイル系の`target`はまとめた指定のうち文字列の昇順で最初のものとし、`aliases`に指定された別名を残します。`resolved_path`はリンク解決後の絶対パスです。ハードリンクで複数ある場合は昇順で最初の実体パスを選びます。CLIでは最初に確認できた候補の実体パスを`resolved_path`へ入れます。`links`は通過したリンクの`path`と、そこに記録された`target`の組です。解決に失敗した実体パスや、空のリンク配列は省略します。
 
 `findings`の各診断は`code`・`category`・`message`・`source`・`paths`を持ち、行番号が分かる場合だけ`line`を含めます。記述元は解決できた実体パス、解決できなければ指定パスとし、親ディレクトリやCLIの診断では空文字列にします。関係するパスがなければ`paths`は空配列です。本文やYAMLの値、不正な引数の値は診断へ転載しません。
+
+`--summary`では検査と件数・状態の決定を済ませてから、`internal/report`で対象外の診断だけを`findings`から除き、`skipped_summary`へ集計します。配列は`code`の昇順です。ほかの診断と対象の識別情報、分類別総件数、検査範囲、状態・終了コードは保持します。通常表示も同じ集計結果を使います。既存の詳細出力を変更せず、追加項目は要約時だけのため、JSON形式の版は`1`を維持します。
 
 対象は`kind`・`target`の順、診断は`source`・`line`・`code`・`category`・`message`・`paths`の順に並べます。関係するパスと別名は文字列の昇順、リンクは`path`・`target`の順に並べ、重複を除きます。同じ種類の同一実体は1件にまとめます。スキルの親の別名は、子の`SKILL.md`の別名にも引き継ぎます。
 

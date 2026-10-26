@@ -9,6 +9,7 @@ type scanOptions struct {
 	skills   []string
 	commands []string
 	json     bool
+	summary  bool
 }
 
 // parseScan は値を実行せずに検証し、不正な値自体は診断へ転載しない。
@@ -18,11 +19,13 @@ func parseScan(args []string) (scanOptions, bool) {
 	for i := 0; i < len(args); i++ {
 		key, value, assigned := strings.Cut(args[i], "=")
 		switch key {
-		case "--json":
+		case "--json", "--summary":
 			if assigned {
 				valid = false
-			} else {
+			} else if key == "--json" {
 				options.json = true
+			} else {
+				options.summary = true
 			}
 		case "--rules", "--skills", "--command":
 			if !assigned {

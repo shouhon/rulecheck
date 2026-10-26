@@ -2,4 +2,4 @@
 package version
 
 // Current は rulecheck の版番号。公開前の変更規則は README.md を参照する。
-const Current = "0.1.2"
+const Current = "0.2.0"

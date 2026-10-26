@@ -72,14 +72,21 @@ type Counts struct {
 	Skipped int `json:"skipped"`
 }
 
+// SkippedCount は対象外の診断を機械判定用のコード別に集計した件数を表す。
+type SkippedCount struct {
+	Code  string `json:"code"`
+	Count int    `json:"count"`
+}
+
 type Report struct {
-	SchemaVersion int      `json:"schema_version"`
-	Tool          Tool     `json:"tool"`
-	Command       string   `json:"command"`
-	Status        string   `json:"status"`
-	Coverage      Coverage `json:"coverage"`
-	Results       []Result `json:"results"`
-	Counts        Counts   `json:"counts"`
+	SchemaVersion  int            `json:"schema_version"`
+	Tool           Tool           `json:"tool"`
+	Command        string         `json:"command"`
+	Status         string         `json:"status"`
+	Coverage       Coverage       `json:"coverage"`
+	Results        []Result       `json:"results"`
+	Counts         Counts         `json:"counts"`
+	SkippedSummary []SkippedCount `json:"skipped_summary,omitempty"`
 }
 
 // New は結果と関係するパスを並べ替え、分類別件数から状態を決定する。
@@ -135,6 +142,32 @@ func New(coverage Coverage, results []Result) Report {
 	default:
 		r.Status = "passed"
 	}
+	return r
+}
+
+// SummarizeSkipped は対象外の詳細をコード別の件数に置き換えた結果を返す。
+// 元の結果、分類別件数、状態、検査範囲は変更しない。
+func (r Report) SummarizeSkipped() Report {
+	r.Results = slices.Clone(r.Results)
+	counts := make(map[string]int)
+	for i := range r.Results {
+		result := &r.Results[i]
+		findings := make([]Finding, 0, len(result.Findings))
+		for _, finding := range result.Findings {
+			if finding.Category == Skipped {
+				counts[finding.Code]++
+			} else {
+				findings = append(findings, finding)
+			}
+		}
+		result.Findings = findings
+	}
+	for code, count := range counts {
+		r.SkippedSummary = append(r.SkippedSummary, SkippedCount{Code: code, Count: count})
+	}
+	slices.SortFunc(r.SkippedSummary, func(a, b SkippedCount) int {
+		return cmp.Compare(a.Code, b.Code)
+	})
 	return r
 }
 

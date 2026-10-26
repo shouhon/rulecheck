@@ -44,6 +44,13 @@ func writeReport(result report.Report, asJSON bool, stdout, stderr io.Writer) in
 				}
 			}
 		}
+		if len(result.SkippedSummary) > 0 {
+			fmt.Fprintln(&text, "対象外の内訳:")
+			for _, skipped := range result.SkippedSummary {
+				fmt.Fprintf(&text, "  %s: %d件\n", skipped.Code, skipped.Count)
+			}
+			fmt.Fprintln(&text, "対象外の詳細は --summary を外して確認してください。")
+		}
 		fmt.Fprintf(&text, "件数: エラー %d / 注意 %d / 判定不能 %d / 対象外 %d\n",
 			result.Counts.Error, result.Counts.Warning, result.Counts.Unknown, result.Counts.Skipped)
 		_, err = io.WriteString(stdout, text.String())

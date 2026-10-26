@@ -40,6 +40,8 @@ func TestScanInvalidArguments(t *testing.T) {
 		{"--command", `C:\tools\rg.exe`}, {"--command", "."},
 		{"--unknown=模擬秘密値"}, {"--rules", "AGENTS.md", "余分な引数"},
 		{"--rules", "AGENTS.md", "--json=false"},
+		{"--summary"}, {"--rules", "AGENTS.md", "--summary=true"},
+		{"--rules", "--summary"},
 		{"--rules", "AGENTS.md", "--help"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {

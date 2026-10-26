@@ -15,13 +15,14 @@ const help = `rulecheck は、明示された指示ファイル・スキル・CL
 使い方:
   rulecheck --help
   rulecheck --version
-  rulecheck scan [--rules <ファイル> ...] [--skills <親ディレクトリ> ...] [--command <名前> ...] [--json]
+  rulecheck scan [--rules <ファイル> ...] [--skills <親ディレクトリ> ...] [--command <名前> ...] [--json] [--summary]
 
 検査対象の指定（少なくとも1つ必要）:
   --rules    指示ファイル。複数指定できます。
   --skills   スキルの親ディレクトリ。直下のスキルだけを対象とします。
   --command  PATHで探すCLI名。CLI自体は実行しません。
   --json     結果をJSONで出力します。
+  --summary  対象外の診断を種類別の件数にまとめます。外すと詳細を表示します。
 
 検査範囲:
   明示した対象だけを読み取り、ファイルや設定の変更、外部URLへの接続は行いません。
@@ -66,6 +67,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return 64
 		}
 		result := scan.Run(scan.Options{Rules: options.rules, Skills: options.skills, Commands: options.commands})
+		if options.summary {
+			result = result.SummarizeSkipped()
+		}
 		return writeReport(result, options.json, stdout, stderr)
 	default:
 		return invalidArguments(stderr)

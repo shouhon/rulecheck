@@ -60,3 +60,24 @@ func TestStableFindingOrder(t *testing.T) {
 		t.Fatal("診断と関係するパスの列挙順によりJSONが変わります")
 	}
 }
+
+func TestSummaryPreservesOriginal(t *testing.T) {
+	original := report.New(report.Coverage{}, []report.Result{{
+		Kind: "rules", Target: "模擬.md", Findings: []report.Finding{
+			{Code: "reference_external_skipped", Category: report.Skipped},
+			{Code: "reference_missing", Category: report.Error},
+		},
+	}})
+	before, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := original.SummarizeSkipped()
+	after, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) || len(summary.Results[0].Findings) != 1 {
+		t.Fatal("要約が元の詳細出力を変更しています")
+	}
+}
