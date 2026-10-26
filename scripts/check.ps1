@@ -40,6 +40,11 @@ try {
         throw '実行ファイルの起動確認に失敗しました。'
     }
 
+    & pwsh -NoProfile -File ./scripts/test-release.ps1
+    if ($LASTEXITCODE -ne 0) {
+        throw 'リリースの条件判定・公開手順のテストに失敗しました。'
+    }
+
     Write-Output '書式・モジュール・静的検査・テスト・ビルド・起動確認が完了しました。'
 }
 finally {

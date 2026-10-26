@@ -20,6 +20,9 @@ pwsh -NoProfile -File ./scripts/check.ps1
 | テスト | `go test ./...` |
 | ビルド | `go build -trimpath -o bin/rulecheck.exe ./cmd/rulecheck` |
 | 起動 | `./bin/rulecheck.exe --version` |
+| リリースの条件と失敗時の停止 | `pwsh -NoProfile -File ./scripts/test-release.ps1`。模擬リポジトリ・配布物・GitHub操作を使い、外部公開しない |
+
+[GitHub Actions](../.github/workflows/ci.yml)でも、mainへのpushとmainを対象とするプルリクエストで同じ必須検証を実行します。版番号が変わったpushだけ、その検証成功後に[自動リリース](releasing.md#mainへのpushによる自動公開)へ進みます。
 
 書式の修正は`go fmt ./...`で行います。テストはCLIの契約に加え、一時ディレクトリ内でファイルの種類・読取可否、共有リンクと別名、循環・リンク切れ、直下だけのスキル列挙、Markdownの構文と相対参照の基準、YAMLの型・欠落・同名の区別を確認します。CLI候補は模擬の`PATH`と`PATHEXT`を使い、検索順序、候補の不足と判定不能、本文の非読取と非実行を確認します。Windowsでは読取を拒むファイルハンドルを使い、参照先の本文を開かないこと、特殊なパス、ジャンクションも確認します。リンクを作成できない場合は該当テストを未確認としてスキップするため、`go test -v ./internal/scan`で理由を確認してください。製品全体の受入確認の現在地は[開発計画](development-plan.md)に残します。
 

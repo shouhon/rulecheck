@@ -2,6 +2,18 @@
 
 公開先は[GitHub](https://github.com/shouhon/rulecheck)と[GitHub Releases](https://github.com/shouhon/rulecheck/releases)です。Windows 11 x64用のZIPを配布し、同じリポジトリの`bucket/rulecheck.json`でScoopから導入できるようにします。実行ファイルは未署名です。
 
+## mainへのpushによる自動公開
+
+[GitHub Actions](../.github/workflows/ci.yml)はmainへのpushとmainを対象とするプルリクエストで、Windows上の必須検証を実行します。mainへのpushでは、push前のコミットとpush後のコミットの`internal/version/version.go`の`Current`を比較し、番号が変わっている場合だけ検証成功後に公開します。複数コミットをまとめてpushしても、最後の1コミットだけでなくpush全体を比較します。番号の据え置きとプルリクエストでは公開せず、番号が下がった場合や比較元を取得できない場合は失敗として停止します。
+
+公開処理は既存の[scripts/package.ps1](../scripts/package.ps1)でWindows x64のZIP・`checksums.txt`・`rulecheck.json`を生成し、push後のコミットを指定して`v<版番号>`のタグと下書きReleaseを作ります。添付ファイル3件をダウンロードし、生成物とSHA-256が一致した場合だけ公開します。説明はGitHubの自動生成を使います。`docs/release-notes.md`は手動公開用です。利用者向けの変更はコミットやプルリクエストの題名にも記載してください。
+
+同じ版の実行は同時に公開しません。異なる版の公開完了順が逆転しても、LatestはGitHubの[`make_latest=legacy`](https://docs.github.com/en/rest/releases/releases#update-a-release)で版番号と作成日時から選びます。公開済みの同じ版・同じコミットは変更せず終了し、別コミットのタグやReleaseは失敗として停止します。タグはGitHub上で確認し、存在しない場合だけ作成します。作成競合は失敗として停止し、公開直前にもタグの対象を再確認します。途中で失敗した場合はActionsでその実行を再実行します。同じコミットの下書きがあれば不足する添付ファイルだけを送信し、既存分も含めて再照合します。不一致の添付ファイルは自動で差し替えません。下書きと生成物を確認し、必要なら新しい版で公開してください。
+
+GitHubの一時的な`GITHUB_TOKEN`を使い、追加の秘密情報の登録は不要です。`contents: write`は公開ジョブだけに与え、ソース取得時の認証情報は保存しません。通常の検証とプルリクエストは読み取り権限で実行します。リポジトリや組織でActionsが制限されている場合は、GitHub公式の`actions/checkout`・`actions/setup-go`と公開ジョブの書き込み権限を許可してください。使用するActionはコミットのSHAへ固定しています。
+
+この処理はReleaseへの添付までを自動化します。Scoopの配布一覧`bucket/rulecheck.json`の更新は以下の準備手順で行い、版番号の更新と一緒に反映してください。自動処理からmainへのコミットやpushは行いません。
+
 ## 準備と検証
 
 1. [READMEの版管理](../README.md#版管理)に従って`internal/version/version.go`を更新します。既に今回の変更で更新済みなら重ねて増やしません。
@@ -33,7 +45,7 @@
 6. 別の出力先でも生成し、ZIPのSHA-256が一致することを確認します。同じGo・PowerShell/.NET・固定済み依存・環境変数での再現確認です。異なるツールチェーンやOSでの一致を保証するものではありません。ソースの絶対パスとGitの作業ツリー状態は実行ファイルへ埋め込まず、ZIP内の日時は固定しています。
 7. 差分に秘密情報・個人用設定・生成物がないことを確認し、必要な検証を通した変更だけをコミットします。`bin/`はGitへ追加しません。変更後に配布物を作り直した場合は、配布一覧と検証結果も対応するものへ更新します。
 
-## GitHubへ公開
+## 手動でGitHubへ公開
 
 ユーザーから対象と公開操作の明示的な認可を得た場合に実行します。ブランチの保護や認証・セキュリティの制限を回避しません。失敗した操作は結果を照会し、未完了と確認できた場合だけ再実行します。
 
