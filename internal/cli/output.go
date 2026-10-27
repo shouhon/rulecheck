@@ -23,6 +23,9 @@ func writeReport(result report.Report, asJSON bool, stdout, stderr io.Writer) in
 		}
 		kinds := map[string]string{"rules": "指示ファイル", "skills": "スキルの親ディレクトリ", "skill": "スキル", "command": "CLI"}
 		fmt.Fprintln(&text, status[result.Status])
+		if result.TargetCount != nil {
+			fmt.Fprintf(&text, "検査対象: %d件\n", *result.TargetCount)
+		}
 		for _, target := range result.Results {
 			fmt.Fprintf(&text, "対象: %s %q\n", kinds[target.Kind], target.Target)
 			if target.ResolvedPath != "" {
@@ -49,7 +52,9 @@ func writeReport(result report.Report, asJSON bool, stdout, stderr io.Writer) in
 			for _, skipped := range result.SkippedSummary {
 				fmt.Fprintf(&text, "  %s: %d件\n", skipped.Code, skipped.Count)
 			}
-			fmt.Fprintln(&text, "対象外の詳細は --summary を外して確認してください。")
+			if result.TargetCount == nil {
+				fmt.Fprintln(&text, "対象外の詳細は --summary を外して確認してください。")
+			}
 		}
 		fmt.Fprintf(&text, "件数: エラー %d / 注意 %d / 判定不能 %d / 対象外 %d\n",
 			result.Counts.Error, result.Counts.Warning, result.Counts.Unknown, result.Counts.Skipped)

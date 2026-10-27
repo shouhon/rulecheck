@@ -228,6 +228,38 @@ func TestExecutableAcceptance(t *testing.T) {
 		}
 	})
 
+	t.Run("1件指定と正常50件の省略表示", func(t *testing.T) {
+		f := newFixture(t, binary)
+		for i := range 50 {
+			name := fmt.Sprintf("skill-%02d", i)
+			writeFile(t, f.path("skills", name, "SKILL.md"), "---\nname: "+name+"\ndescription: "+secret+"\n---\n")
+		}
+		writeFile(t, f.path("isolated", "good", "SKILL.md"), "---\nname: good\ndescription: "+secret+"\n---\n[資料](資料.md)\n")
+		writeFile(t, f.path("isolated", "good", "資料.md"), secret+"\x00")
+		writeFile(t, f.path("isolated", "bad", "SKILL.md"), "不正なメタデータ\n")
+		writeFile(t, f.path("isolated", "good", "nested", "SKILL.md"), "不正なメタデータ\n")
+		writeFile(t, f.path("unknown.md"), "[[未対応の参照]]\n")
+		watchFixture(t, f.root)
+		lockFile(t, f.path("isolated", "bad", "SKILL.md"))
+		lockFile(t, f.path("isolated", "good", "資料.md"))
+		r, _ := f.check(t, []string{"--skill=isolated/good"}, "passed", 0, report.Counts{})
+		if len(r.Results) != 1 || r.Results[0].ResolvedPath != f.path("isolated", "good", "SKILL.md") || r.Coverage.Skills != report.Completed || r.Coverage.References != report.Completed {
+			t.Fatal("指定したスキルの構成と参照だけを検査していません")
+		}
+		r, output := f.check(t, []string{"--skills=skills", "--quiet"}, "passed", 0, report.Counts{})
+		if r.TargetCount == nil || *r.TargetCount != 51 || len(r.Results) != 0 || strings.Contains(output.text, "skill-00") || strings.Count(output.text, "\n") != 3 {
+			t.Fatal("正常50件を省略するか、親を含む検査対象数を保持できません")
+		}
+		r, _ = f.check(t, []string{"--skill=isolated/good", "--quiet"}, "passed", 0, report.Counts{})
+		if r.TargetCount == nil || *r.TargetCount != 1 || len(r.Results) != 0 {
+			t.Fatal("1件指定と省略表示を併用できません")
+		}
+		r, output = f.check(t, []string{"--skill=isolated/good", "--rules=missing.md", "--rules=unknown.md", "--quiet"}, "incomplete", 2, report.Counts{Error: 1, Unknown: 1})
+		if r.TargetCount == nil || *r.TargetCount != 3 || len(r.Results) != 2 || !strings.Contains(output.text, "missing.md") || !strings.Contains(output.text, "unknown.md") {
+			t.Fatal("省略表示から問題の詳細が消えています")
+		}
+	})
+
 	t.Run("同名の異なる実体と同一実体の別名", func(t *testing.T) {
 		f := newFixture(t, binary)
 		for _, parent := range []string{"one", "two"} {

@@ -73,11 +73,12 @@ func TestSummaryPreservesOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 	summary := original.SummarizeSkipped()
+	quiet := original.SummarizeProblems()
 	after, err := json.Marshal(original)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(before) != string(after) || len(summary.Results[0].Findings) != 1 {
+	if string(before) != string(after) || len(summary.Results[0].Findings) != 1 || len(quiet.Results[0].Findings) != 1 {
 		t.Fatal("要約が元の詳細出力を変更しています")
 	}
 }

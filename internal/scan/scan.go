@@ -14,9 +14,10 @@ import (
 )
 
 type Options struct {
-	Rules    []string
-	Skills   []string
-	Commands []string
+	Rules     []string
+	Skills    []string
+	SkillDirs []string
+	Commands  []string
 }
 
 type target struct {
@@ -57,6 +58,20 @@ func Run(options Options) report.Report {
 			} else {
 				coverage.References = report.Partial
 			}
+		}
+	}
+	if len(options.SkillDirs) != 0 {
+		coverage.Skills = report.Completed
+		if coverage.References == report.NotRequested {
+			coverage.References = report.Completed
+		}
+		for _, path := range sortedUnique(options.SkillDirs) {
+			dir, err := resolve(path)
+			if err != nil || !dir.info.IsDir() {
+				s.add("skill", path, true)
+				continue
+			}
+			s.add("skill", filepath.Join(path, "SKILL.md"), false)
 		}
 	}
 	// 別名と実体パスを確定してから本文を読み、相対参照の基準を固定する。
@@ -141,6 +156,9 @@ func (s *scanner) add(kind, path string, directory bool) (*target, bool) {
 			if t.result.Kind == kind && t.info != nil && os.SameFile(t.info, r.info) {
 				t.result.Aliases = append(t.result.Aliases, path)
 				t.result.Links = append(t.result.Links, r.links...)
+				if path < t.result.Target {
+					t.result.Target = path
+				}
 				if r.path < t.result.ResolvedPath {
 					t.result.ResolvedPath = r.path
 				}
@@ -156,7 +174,7 @@ func (s *scanner) add(kind, path string, directory bool) (*target, bool) {
 	}
 	t.result.ResolvedPath = r.path
 	if directory && !r.info.IsDir() {
-		t.result.Findings = append(t.result.Findings, report.Finding{Code: "path_not_directory", Category: report.Error, Message: "スキルの親にディレクトリ以外が指定されています。"})
+		t.result.Findings = append(t.result.Findings, report.Finding{Code: "path_not_directory", Category: report.Error, Message: "対象はディレクトリではありません。"})
 	} else if !directory && !r.info.Mode().IsRegular() {
 		t.result.Findings = append(t.result.Findings, report.Finding{Code: "path_not_file", Category: report.Error, Message: "対象は通常のファイルではありません。"})
 	} else {

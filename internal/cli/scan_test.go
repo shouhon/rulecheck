@@ -33,7 +33,7 @@ func decodeReport(t *testing.T, output string) report.Report {
 
 func TestScanInvalidArguments(t *testing.T) {
 	for _, args := range [][]string{
-		{}, {"--rules"}, {"--skills"}, {"--command"},
+		{}, {"--rules"}, {"--skills"}, {"--skill"}, {"--command"},
 		{"--rules="}, {"--skills", " \t"}, {"--command="},
 		{"--rules", "--json"}, {"--skills", "--command", "rg"},
 		{"--rules", "file\x00.md"}, {"--command", "../rg"},
@@ -43,6 +43,9 @@ func TestScanInvalidArguments(t *testing.T) {
 		{"--summary"}, {"--rules", "AGENTS.md", "--summary=true"},
 		{"--rules", "--summary"},
 		{"--rules", "AGENTS.md", "--help"},
+		{"--quiet"}, {"--rules", "AGENTS.md", "--quiet=true"},
+		{"--rules", "--quiet"}, {"--skill="}, {"--skill", " \t"},
+		{"--skill", "--quiet"}, {"--skill", "file\x00"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			for _, asJSON := range []bool{false, true} {
@@ -162,6 +165,31 @@ func TestScanUnrequestedCoverage(t *testing.T) {
 		Skills: report.NotRequested, Commands: report.Completed,
 	}) {
 		t.Fatalf("指定していない範囲が検査対象になっています: %+v", result.Coverage)
+	}
+}
+
+func TestScanSelectedSkills(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "日本語 空白"), filepath.Join(dir, "other")
+	for _, path := range []string{a, b} {
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+		body := "---\nname: " + filepath.Base(path) + "\ndescription: 模擬秘密値\n---\n"
+		if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	code := cli.Run([]string{"scan", "--skill", a, "--skill=" + b, "--skill", a, "--json"}, &stdout, &stderr)
+	result := decodeReport(t, stdout.String())
+	if code != 0 || stderr.Len() != 0 || len(result.Results) != 2 || result.Coverage != (report.Coverage{
+		Rules: report.NotRequested, References: report.Completed, Skills: report.Completed, Commands: report.NotRequested,
+	}) {
+		t.Fatalf("指定したスキルの検査が一致しません: 終了コード=%d、結果=%+v、標準エラー=%q", code, result, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "模擬秘密値") {
+		t.Fatal("メタデータの値が出力されています")
 	}
 }
 

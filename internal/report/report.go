@@ -85,6 +85,7 @@ type Report struct {
 	Status         string         `json:"status"`
 	Coverage       Coverage       `json:"coverage"`
 	Results        []Result       `json:"results"`
+	TargetCount    *int           `json:"target_count,omitempty"`
 	Counts         Counts         `json:"counts"`
 	SkippedSummary []SkippedCount `json:"skipped_summary,omitempty"`
 }
@@ -168,6 +169,22 @@ func (r Report) SummarizeSkipped() Report {
 	slices.SortFunc(r.SkippedSummary, func(a, b SkippedCount) int {
 		return cmp.Compare(a.Code, b.Code)
 	})
+	return r
+}
+
+// SummarizeProblems は検査対象数を残し、問題のある対象だけを返す。
+// 対象外の診断は種類別件数にまとめ、分類別件数・状態・終了コードを保つ。
+func (r Report) SummarizeProblems() Report {
+	total := len(r.Results)
+	r = r.SummarizeSkipped()
+	r.TargetCount = &total
+	results := make([]Result, 0, len(r.Results))
+	for _, result := range r.Results {
+		if len(result.Findings) > 0 {
+			results = append(results, result)
+		}
+	}
+	r.Results = results
 	return r
 }
 

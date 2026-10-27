@@ -178,6 +178,105 @@ func TestDirectSkillsOnly(t *testing.T) {
 	}
 }
 
+func TestSelectedSkillOnly(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "対象 空白")
+	file := filepath.Join(skillDir, "SKILL.md")
+	write(t, file, "---\nname: 対象 空白\ndescription: 模擬秘密値\n---\n[資料](資料.md)\n")
+	write(t, filepath.Join(skillDir, "資料.md"), "[再帰しない](不在.md)\x00")
+	write(t, filepath.Join(dir, "兄弟", "SKILL.md"), "不正なスキル\n")
+	write(t, filepath.Join(skillDir, "入れ子", "SKILL.md"), "不正なスキル\n")
+	write(t, filepath.Join(dir, "SKILL.md"), "親は対象外\n")
+	result := scan.Run(scan.Options{SkillDirs: []string{skillDir, skillDir}})
+	if len(result.Results) != 1 || result.Results[0].Kind != "skill" || result.Results[0].ResolvedPath != file || result.Counts != (report.Counts{}) || result.ExitCode() != 0 || result.Coverage != (report.Coverage{
+		Rules: report.NotRequested, References: report.Completed, Skills: report.Completed, Commands: report.NotRequested,
+	}) {
+		t.Fatalf("指定した1件以外を検査したか、構成と参照を検査していません: %+v", result)
+	}
+}
+
+func TestSelectedSkillFailures(t *testing.T) {
+	dir := t.TempDir()
+	plain := filepath.Join(dir, "file.md")
+	write(t, plain, "通常のファイル\n")
+	empty := filepath.Join(dir, "empty")
+	if err := os.Mkdir(empty, 0700); err != nil {
+		t.Fatal(err)
+	}
+	wrongType := filepath.Join(dir, "wrong-type")
+	if err := os.MkdirAll(filepath.Join(wrongType, "SKILL.md"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	metadata := filepath.Join(dir, "metadata")
+	write(t, filepath.Join(metadata, "SKILL.md"), "---\nname: metadata\n---\n")
+	references := filepath.Join(dir, "references")
+	write(t, filepath.Join(references, "SKILL.md"), "---\nname: references\ndescription: 説明\n---\n[参照](不在.md)\n")
+	unknown := filepath.Join(dir, "unknown")
+	write(t, filepath.Join(unknown, "SKILL.md"), "模擬秘密値\x00")
+	for _, tc := range []struct {
+		name, path, code string
+		category         report.Category
+		exit             int
+	}{
+		{"不存在", filepath.Join(dir, "missing"), "path_missing", report.Error, 1},
+		{"ファイル指定", plain, "path_not_directory", report.Error, 1},
+		{"SKILL.md不存在", empty, "path_missing", report.Error, 1},
+		{"SKILL.mdがディレクトリ", wrongType, "path_not_file", report.Error, 1},
+		{"メタデータ不備", metadata, "metadata_description_missing", report.Error, 1},
+		{"参照切れ", references, "reference_missing", report.Error, 1},
+		{"読取不能", unknown, "text_unsupported", report.Unknown, 2},
+		{"ネットワーク", `\\invalid.example\share\skill`, "path_not_local", report.Unknown, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := scan.Run(scan.Options{SkillDirs: []string{tc.path}})
+			if len(result.Results) != 1 || result.Results[0].Kind != "skill" || !hasCode(result.Results[0], tc.code, tc.category) || result.ExitCode() != tc.exit {
+				t.Fatalf("スキルの不備を区別していません: %+v", result)
+			}
+			if tc.category == report.Unknown && (result.Coverage.Skills != report.Partial || result.Coverage.References != report.Partial) {
+				t.Fatalf("判定不能を検査済みにしています: %+v", result.Coverage)
+			}
+		})
+	}
+}
+
+func TestSelectedSkillsAndParentShareIdentity(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "first"), filepath.Join(dir, "second")
+	for _, path := range []string{a, b} {
+		write(t, filepath.Join(path, "SKILL.md"), "---\nname: first\ndescription: 説明\n---\n")
+	}
+	selected := scan.Run(scan.Options{SkillDirs: []string{b, a}})
+	combined := scan.Run(scan.Options{Skills: []string{dir}, SkillDirs: []string{a, b}})
+	if len(selected.Results) != 2 || len(combined.Results) != 3 || selected.Counts != (report.Counts{Warning: 3}) || combined.Counts != selected.Counts {
+		t.Fatalf("同一実体の集約か、選択したスキル間の名前比較が一致しません: %+v / %+v", selected, combined)
+	}
+	for _, result := range selected.Results {
+		if !hasCode(result, "skill_name_duplicate", report.Warning) {
+			t.Fatalf("選択したスキル間で名前を比較していません: %+v", result)
+		}
+	}
+}
+
+func TestSelectedSkillAliases(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "root")
+	real := filepath.Join(root, "actual")
+	file := filepath.Join(real, "SKILL.md")
+	write(t, file, "---\nname: actual\ndescription: 説明\n---\n[資料](資料.md)\n")
+	write(t, filepath.Join(real, "資料.md"), "参照先\n")
+	alias := filepath.Join(dir, "alias")
+	symlink(t, real, alias)
+	result := scan.Run(scan.Options{Skills: []string{root}, SkillDirs: []string{real, alias}})
+	if len(result.Results) != 2 || result.Counts != (report.Counts{}) || result.ExitCode() != 0 {
+		t.Fatalf("共有リンクからの選択が重複扱いか、相対参照の基準が変わっています: %+v", result)
+	}
+	for _, target := range result.Results {
+		if target.Kind == "skill" && (target.Target != filepath.Join(alias, "SKILL.md") || target.ResolvedPath != file || len(target.Aliases) != 2 || len(target.Links) != 1) {
+			t.Fatalf("選択したスキルの別名や参照関係が失われています: %+v", target)
+		}
+	}
+}
+
 func TestSkillDirectoryAliases(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "skills")
