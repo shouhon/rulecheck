@@ -7,6 +7,8 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location -LiteralPath $projectRoot
 try {
+    & ./scripts/check-scoop-manifest.ps1
+
     $unformatted = @(& gofmt -l cmd internal)
     if ($LASTEXITCODE -ne 0) {
         throw 'Goの書式検査に失敗しました。'

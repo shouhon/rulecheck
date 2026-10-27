@@ -63,8 +63,39 @@ try {
     }
     finally { Pop-Location }
 
-    # 公開処理は隔離した配布物と模擬のghを使い、GitHubへ接続しない。
+    # 配布定義と公開処理は隔離した模擬データで確認し、GitHubへ接続しない。
     [System.IO.Directory]::CreateDirectory((Join-Path $sandbox 'scripts')) | Out-Null
+    [System.IO.Directory]::CreateDirectory((Join-Path $sandbox 'bucket')) | Out-Null
+    $manifestChecker = Join-Path $sandbox 'scripts/check-scoop-manifest.ps1'
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'scripts/check-scoop-manifest.ps1') -Destination $manifestChecker
+    [System.IO.File]::WriteAllText((Join-Path $sandbox 'internal/version/version.go'), "package version`nconst Current = `"9.8.7`"`n")
+    $manifestPath = Join-Path $sandbox 'bucket/rulecheck.json'
+    $validManifest = @{
+        version = '9.8.7'
+        architecture = @{ '64bit' = @{
+            url = 'https://github.com/shouhon/rulecheck/releases/download/v9.8.7/rulecheck_9.8.7_windows_amd64.zip'
+            hash = 'a' * 64
+        } }
+        bin = 'rulecheck.exe'
+    } | ConvertTo-Json -Depth 5
+    [System.IO.File]::WriteAllText($manifestPath, $validManifest)
+    & $manifestChecker | Out-Null
+    foreach ($change in @(
+        { param($m) $m.version = '9.8.6' },
+        { param($m) $m.version = @('9.8.7') },
+        { param($m) $m.architecture['64bit'].url = 'https://example.invalid/other.zip' },
+        { param($m) $m.architecture['64bit'].hash = '不正なハッシュ' },
+        { param($m) $m.bin = 'other.exe' },
+        { param($m) $m.architecture = @{} }
+    )) {
+        $manifest = $validManifest | ConvertFrom-Json -AsHashtable
+        & $change $manifest
+        [System.IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 5))
+        Assert-Throws { & $manifestChecker } '不整合なScoopの配布定義を許可しました。'
+    }
+    [System.IO.File]::WriteAllText($manifestPath, '{')
+    Assert-Throws { & $manifestChecker } '不正なJSONのScoop配布定義を許可しました。'
+
     $publisher = Join-Path $sandbox 'scripts/publish-release.ps1'
     Copy-Item -LiteralPath (Join-Path $projectRoot 'scripts/publish-release.ps1') -Destination $publisher
     $releaseDirectory = Join-Path $sandbox 'bin/release/9.8.7'

@@ -12,18 +12,12 @@
 
 GitHubの一時的な`GITHUB_TOKEN`を使い、追加の秘密情報の登録は不要です。`contents: write`は公開ジョブだけに与え、ソース取得時の認証情報は保存しません。通常の検証とプルリクエストは読み取り権限で実行します。リポジトリや組織でActionsが制限されている場合は、GitHub公式の`actions/checkout`・`actions/setup-go`と公開ジョブの書き込み権限を許可してください。使用するActionはコミットのSHAへ固定しています。
 
-この処理はReleaseへの添付までを自動化します。Scoopの配布一覧`bucket/rulecheck.json`の更新は以下の準備手順で行い、版番号の更新と一緒に反映してください。自動処理からmainへのコミットやpushは行いません。
+この処理はReleaseへの添付までを自動化します。Scoopの配布一覧`bucket/rulecheck.json`の更新は以下の準備手順で行い、版番号の更新と同じコミットへ含めてください。配布一覧が古いとScoopは新しいReleaseを更新対象として扱いません。必須検証で配布一覧の版番号・URL・SHA-256の形式を確認し、更新漏れを検出します。自動処理からmainへのコミットやpushは行いません。
 
 ## 準備と検証
 
 1. [READMEの版管理](../README.md#版管理)に従って`internal/version/version.go`を更新します。既に今回の変更で更新済みなら重ねて増やしません。
-2. Windows x64・PowerShell 7で必須検証を実行します。
-
-   ```powershell
-   pwsh -NoProfile -File ./scripts/check.ps1
-   ```
-
-3. 配布物を生成します。このスクリプトは公開・Git操作・依存の更新を行いません。Goの依存は事前に取得しておきます。
+2. Windows x64・PowerShell 7で配布物を生成します。このスクリプトは公開・Git操作・依存の更新を行いません。Goの依存は事前に取得しておきます。
 
    ```powershell
    pwsh -NoProfile -File ./scripts/package.ps1
@@ -33,8 +27,7 @@ GitHubの一時的な`GITHUB_TOKEN`を使い、追加の秘密情報の登録は
 
    生成先は`bin/release/<版番号>/`です。ZIPの内容は`rulecheck.exe`・`LICENSE`・`THIRD_PARTY_NOTICES.txt`だけです。ZIPに加えて、SHA-256の一覧`checksums.txt`とScoopの定義`rulecheck.json`を生成します。同じ出力先にZIPがある場合は上書きせず失敗します。再生成時は`-OutputDirectory bin/release-check`のように別の保存先を指定してください。
 
-4. ZIPを一時ディレクトリへ展開し、`--version`・`--help`と模擬データの`scan --json`を確認します。JSONの版、終了コード、前後の対象ファイルの一致を確認します。ライセンス2件がソースと一致すること、ZIPとScoopの定義のSHA-256が`checksums.txt`と一致することも確認します。
-5. 生成した定義を配布一覧へ反映します。
+3. 生成した定義を配布一覧へ反映します。
 
    ```powershell
    New-Item -ItemType Directory -Path bucket -Force | Out-Null
@@ -42,6 +35,13 @@ GitHubの一時的な`GITHUB_TOKEN`を使い、追加の秘密情報の登録は
    git diff --check
    ```
 
+4. 必須検証を実行します。`scripts/check-scoop-manifest.ps1`が正本と配布一覧の版番号、配布URL、SHA-256の形式、実行ファイル名を確認します。公開先への接続は行わないため、ZIPの実際のハッシュ照合も次の手順で行ってください。
+
+   ```powershell
+   pwsh -NoProfile -File ./scripts/check.ps1
+   ```
+
+5. ZIPを一時ディレクトリへ展開し、`--version`・`--help`と模擬データの`scan --json`を確認します。JSONの版、終了コード、前後の対象ファイルの一致を確認します。ライセンス2件がソースと一致すること、ZIPとScoopの定義のSHA-256が`checksums.txt`と一致することも確認します。
 6. 別の出力先でも生成し、ZIPのSHA-256が一致することを確認します。同じGo・PowerShell/.NET・固定済み依存・環境変数での再現確認です。異なるツールチェーンやOSでの一致を保証するものではありません。ソースの絶対パスとGitの作業ツリー状態は実行ファイルへ埋め込まず、ZIP内の日時は固定しています。
 7. 差分に秘密情報・個人用設定・生成物がないことを確認し、必要な検証を通した変更だけをコミットします。`bin/`はGitへ追加しません。変更後に配布物を作り直した場合は、配布一覧と検証結果も対応するものへ更新します。
 
