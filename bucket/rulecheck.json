@@ -1,12 +1,12 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "指示ファイルとスキルの参照先・共有リンク・必要なCLIを読み取り専用で検査",
   "homepage": "https://github.com/shouhon/rulecheck",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/shouhon/rulecheck/releases/download/v0.3.0/rulecheck_0.3.0_windows_amd64.zip",
-      "hash": "60a731e78e0b4b81fa2b15acce04c1c368f235b3423e774d445054a88c8fba3e"
+      "url": "https://github.com/shouhon/rulecheck/releases/download/v0.4.0/rulecheck_0.4.0_windows_amd64.zip",
+      "hash": "007ac73c091766344238fdae60069b39f97e4c593d559bad07b5a3b2489941f3"
     }
   },
   "bin": "rulecheck.exe"

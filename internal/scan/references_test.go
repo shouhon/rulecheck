@@ -30,6 +30,9 @@ func TestMarkdownLocalReferences(t *testing.T) {
 	if result.ExitCode() != 0 || result.Counts != (report.Counts{Skipped: 1}) || result.Coverage.References != report.Completed {
 		t.Fatalf("ローカル参照の構文または非再帰が一致しません: %+v", result)
 	}
+	if result.ReferenceCounts != (report.ReferenceCounts{Checked: 13, Passed: 13, Skipped: 1}) {
+		t.Fatalf("通常・参照形式・画像の成功件数が一致しません: %+v", result.ReferenceCounts)
+	}
 }
 
 func TestMarkdownExcludedExamplesAndExternalURLs(t *testing.T) {
@@ -44,6 +47,9 @@ func TestMarkdownExcludedExamplesAndExternalURLs(t *testing.T) {
 	if result.ExitCode() != 0 || result.Counts.Error != 0 || result.Counts.Unknown != 0 || result.Counts.Skipped < 9 {
 		t.Fatalf("コードや外部URLをローカル参照として扱っています: %+v", result)
 	}
+	if result.ReferenceCounts != (report.ReferenceCounts{Skipped: result.Counts.Skipped}) {
+		t.Fatalf("対象外の記述を検査対象数へ混ぜています: %+v", result.ReferenceCounts)
+	}
 	data, _ := json.Marshal(result)
 	if strings.Contains(string(data), "模擬秘密値") || strings.Contains(string(data), "missing.md") {
 		t.Fatal("検査対象外の本文を出力しています")
@@ -57,6 +63,9 @@ func TestMarkdownFailureLinesAndPartialCoverage(t *testing.T) {
 	result := scan.Run(scan.Options{Rules: []string{file}})
 	if result.ExitCode() != 1 || result.Counts != (report.Counts{Error: 2, Skipped: 1}) || result.Coverage.References != report.Completed {
 		t.Fatalf("不存在の分類・件数が一致しません: %+v", result)
+	}
+	if result.ReferenceCounts != (report.ReferenceCounts{Checked: 2, Error: 2, Skipped: 1}) {
+		t.Fatalf("参照のエラー件数が一致しません: %+v", result.ReferenceCounts)
 	}
 	f := result.Results[0].Findings[0]
 	if f.Code != "reference_missing" || f.Line != 2 || f.Source != file || len(f.Paths) != 1 || f.Paths[0] != filepath.Join(dir, "missing.md") {
@@ -102,6 +111,9 @@ func TestMarkdownRelativeBaseUsesResolvedFile(t *testing.T) {
 	if result.ExitCode() != 0 || result.Results[0].ResolvedPath != real {
 		t.Fatalf("別名のディレクトリを相対参照の基準にしています: %+v", result)
 	}
+	if result.ReferenceCounts != (report.ReferenceCounts{Checked: 1, Passed: 1}) {
+		t.Fatalf("共有リンク経由の成功件数が一致しません: %+v", result.ReferenceCounts)
+	}
 }
 
 func TestMarkdownBrokenAndCyclicReferenceLinks(t *testing.T) {
@@ -114,14 +126,38 @@ func TestMarkdownBrokenAndCyclicReferenceLinks(t *testing.T) {
 	if result.ExitCode() != 1 || !hasCode(result.Results[0], "reference_link_broken", report.Error) || !hasCode(result.Results[0], "reference_link_cycle", report.Error) {
 		t.Fatalf("参照先のリンク切れと循環を区別できません: %+v", result)
 	}
+	if result.ReferenceCounts != (report.ReferenceCounts{Checked: 2, Error: 2}) {
+		t.Fatalf("リンク切れと循環の参照件数が一致しません: %+v", result.ReferenceCounts)
+	}
 }
 
 func TestSkillMarkdownStartsAfterMetadata(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "skill", "SKILL.md"), "---\nname: skill\ndescription: '[例](ignored.md)'\n---\n[参照](missing.md)\n")
-	result := scan.Run(scan.Options{Skills: []string{dir}})
+	result := scan.Run(scan.Options{Skills: []string{dir}, SkillDirs: []string{filepath.Join(dir, "skill")}})
 	f := result.Results[0].Findings[0]
 	if result.Counts != (report.Counts{Error: 1}) || f.Code != "reference_missing" || f.Line != 5 || result.Coverage.Skills != report.Completed {
 		t.Fatalf("メタデータのリンク除外または本文行番号が一致しません: %+v", result)
+	}
+	if result.ReferenceCounts != (report.ReferenceCounts{Checked: 1, Error: 1}) {
+		t.Fatalf("メタデータや同一スキルの再指定が参照件数に混ざっています: %+v", result.ReferenceCounts)
+	}
+}
+
+func TestReferenceCountsUseOccurrencesAndSourceIdentity(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "target.md"), "参照先の本文は検査しない\x00")
+	first := filepath.Join(dir, "first.md")
+	alias := filepath.Join(dir, "alias.md")
+	second := filepath.Join(dir, "second.md")
+	write(t, first, "[一](target.md)\n[二](./target.md)\n![三][定義]\n\n[定義]: target.md\n")
+	write(t, second, "[四](target.md)\n")
+	if err := os.Link(first, alias); err != nil {
+		t.Skipf("ハードリンクを作成できないため未確認: %v", err)
+	}
+	t.Chdir(dir)
+	result := scan.Run(scan.Options{Rules: []string{first, alias, "first.md", first, second}})
+	if result.ExitCode() != 0 || len(result.Results) != 2 || result.Counts != (report.Counts{}) || result.ReferenceCounts != (report.ReferenceCounts{Checked: 4, Passed: 4}) {
+		t.Fatalf("参照の出現数と記述元の別名の集約が一致しません: %+v", result)
 	}
 }

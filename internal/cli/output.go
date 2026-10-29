@@ -56,6 +56,11 @@ func writeReport(result report.Report, asJSON bool, stdout, stderr io.Writer) in
 				fmt.Fprintln(&text, "対象外の詳細は --summary を外して確認してください。")
 			}
 		}
+		if result.Coverage.References != report.NotRequested && result.Coverage.References != report.NotRun {
+			counts := result.ReferenceCounts
+			fmt.Fprintf(&text, "参照: 検査対象 %d / 成功 %d / エラー %d / 判定不能 %d / 対象外 %d\n",
+				counts.Checked, counts.Passed, counts.Error, counts.Unknown, counts.Skipped)
+		}
 		fmt.Fprintf(&text, "件数: エラー %d / 注意 %d / 判定不能 %d / 対象外 %d\n",
 			result.Counts.Error, result.Counts.Warning, result.Counts.Unknown, result.Counts.Skipped)
 		_, err = io.WriteString(stdout, text.String())

@@ -72,6 +72,16 @@ type Counts struct {
 	Skipped int `json:"skipped"`
 }
 
+// ReferenceCounts は参照の検査結果と、対象外の診断件数を表す。
+// 見出し付きローカル参照は、パスの成功と見出しの対象外の両方に数える。
+type ReferenceCounts struct {
+	Checked int `json:"checked"`
+	Passed  int `json:"passed"`
+	Error   int `json:"error"`
+	Unknown int `json:"unknown"`
+	Skipped int `json:"skipped"`
+}
+
 // SkippedCount は対象外の診断を機械判定用のコード別に集計した件数を表す。
 type SkippedCount struct {
 	Code  string `json:"code"`
@@ -79,15 +89,16 @@ type SkippedCount struct {
 }
 
 type Report struct {
-	SchemaVersion  int            `json:"schema_version"`
-	Tool           Tool           `json:"tool"`
-	Command        string         `json:"command"`
-	Status         string         `json:"status"`
-	Coverage       Coverage       `json:"coverage"`
-	Results        []Result       `json:"results"`
-	TargetCount    *int           `json:"target_count,omitempty"`
-	Counts         Counts         `json:"counts"`
-	SkippedSummary []SkippedCount `json:"skipped_summary,omitempty"`
+	SchemaVersion   int             `json:"schema_version"`
+	Tool            Tool            `json:"tool"`
+	Command         string          `json:"command"`
+	Status          string          `json:"status"`
+	Coverage        Coverage        `json:"coverage"`
+	Results         []Result        `json:"results"`
+	TargetCount     *int            `json:"target_count,omitempty"`
+	Counts          Counts          `json:"counts"`
+	ReferenceCounts ReferenceCounts `json:"reference_counts"`
+	SkippedSummary  []SkippedCount  `json:"skipped_summary,omitempty"`
 }
 
 // New は結果と関係するパスを並べ替え、分類別件数から状態を決定する。

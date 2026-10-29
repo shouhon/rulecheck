@@ -75,6 +75,7 @@ func Run(options Options) report.Report {
 		}
 	}
 	// 別名と実体パスを確定してから本文を読み、相対参照の基準を固定する。
+	var referenceCounts report.ReferenceCounts
 	for _, t := range s.targets {
 		if t.result.Kind != "rules" && t.result.Kind != "skill" {
 			continue
@@ -91,7 +92,7 @@ func Run(options Options) report.Report {
 		if t.result.Kind == "skill" {
 			body = checkMetadata(t, body)
 		}
-		checkReferences(t, body)
+		checkReferences(t, body, &referenceCounts)
 	}
 	s.checkSkillNames()
 	if len(options.Commands) != 0 {
@@ -140,7 +141,9 @@ func Run(options Options) report.Report {
 		}
 		results = append(results, t.result)
 	}
-	return report.New(coverage, results)
+	r := report.New(coverage, results)
+	r.ReferenceCounts = referenceCounts
+	return r
 }
 
 func sortedUnique(paths []string) []string {
