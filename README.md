@@ -9,12 +9,12 @@ LLM向けの指示ファイルとスキルの参照切れ、壊れた共有リ�
 
 ## 利用場面と得られる結果
 
-たとえば、参照先の文書を移動したあとに `AGENTS.md` を検査すると、リンク切れの行番号と参照先のパスが表示され、どこを直せばよいか分かります。
+たとえば、参照先の文書を移動したあとに `rulecheck scan --rules ./AGENTS.md` を実行すると、リンク切れの行番号と参照先のパスが表示されます。
 
 ```mermaid
 flowchart TD
-    situation["文書を移動したため<br/>AGENTS.md のリンクが切れる"] --> action["rulecheck scan --rules ./AGENTS.md<br/>で参照先を検査する"]
-    action --> result["リンク切れの行番号と参照先のパスから<br/>修正箇所が分かる"]
+    situation["文書を移動して<br/>参照が切れる"] --> action["AGENTS.md の<br/>参照先を検査"]
+    action --> result["行番号とパスで<br/>修正箇所を特定"]
 ```
 
 ## 主な機能
